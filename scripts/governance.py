@@ -13,6 +13,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from intake import validate  # noqa: E402
+from pyfind import default_python  # noqa: E402
 from packs import PackError  # noqa: E402
 from select_pack import select  # noqa: E402
 from tier import compute_tier, load_tiers  # noqa: E402
@@ -44,7 +45,7 @@ def build(intake, exceptions=(), mcp_allow=(), hook_python=None):
                           "pins": [{"id": pid, "sha256": h} for pid, h in s["pins"]]}
                   for agent, s in sel.items()},
         "mcp_allow": sorted(set(mcp_allow)),
-        "hook_python": hook_python or ("python" if os.name == "nt" else "python3"),
+        "hook_python": hook_python or default_python(),
         "exceptions": exceptions,
     }
 

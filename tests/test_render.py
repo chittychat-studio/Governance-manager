@@ -218,14 +218,48 @@ def test_old_shell_form_entries_are_replaced(tmp_path):
     assert len(stops) == 1 and "args" in stops[0]
 
 
-def test_lint_warns_when_hook_python_missing(installed):
+def test_lint_fails_when_hook_python_missing(installed):
     gov = governance.read(installed)
     gov["hook_python"] = "no-such-python-xyz"
     governance.write(installed, gov)
     render.render(installed)
     fails, warns = lint.lint(installed)
-    assert fails == [] and any("not on PATH" in w and "NOT block" in w for w in warns)
+    assert any("does not start Python" in f and "NOT block" in f for f in fails)
 
 
 def test_hook_python_recorded(installed):
     assert governance.read(installed)["hook_python"] in ("python", "python3")
+
+
+def test_r5_user_entry_equal_to_pack_entry_is_never_removed(tmp_path):
+    """R5: a user's own deny rule identical to a pack rule stays the user's when that rule is disabled."""
+    repo = install(tmp_path / "r", settings={"permissions": {"deny": ["Bash(git push --force *)"]}})
+    managed = json.loads((repo / render.MANAGED).read_text())
+    assert "Bash(git push --force *)" not in managed["deny"]
+    exceptions.add(repo, rule="P6-force-push", reason="Release branch rebases are force-pushed by CI.",
+                   today=D, user="a@b.c")
+    render.render(repo)
+    deny = settings(repo)["permissions"]["deny"]
+    assert "Bash(git push --force *)" in deny            # the user's entry survived
+    assert "Bash(git push -f *)" not in deny             # Governor's own entry went
+    assert lint.lint(repo)[0] == []
+
+
+@pytest.mark.parametrize("bad", ['[1, 2]', 'null', '{"hooks": {"Stop": "x"}}', '{"permissions": {"deny": "x"}}'])
+def test_bad_settings_refused_before_anything_is_written(tmp_path, bad):
+    """I2/R5: refuse with nothing written (no half-installed hooks)."""
+    repo = tmp_path / "r"
+    (repo / ".claude").mkdir(parents=True)
+    (repo / ".claude/settings.json").write_text(bad)
+    governance.write(repo, governance.build(FIXTURE_INTAKE))
+    with pytest.raises(render.RenderError):
+        render.render(repo)
+    assert not (repo / ".claude/hooks").exists() and not (repo / "CLAUDE.md").exists()
+
+
+def test_settings_with_bom_is_accepted(tmp_path):
+    repo = tmp_path / "r"
+    (repo / ".claude").mkdir(parents=True)
+    (repo / ".claude/settings.json").write_bytes(b"\xef\xbb\xbf" + json.dumps({"model": "m"}).encode())
+    install(repo)
+    assert settings(repo)["model"] == "m" and lint.lint(repo)[0] == []

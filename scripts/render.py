@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import governance  # noqa: E402
+from pyfind import default_python  # noqa: E402
 from packs import PackError, read_lock, resolve  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -31,20 +32,16 @@ COVERAGE_MD = ".claude/governor/COVERAGE.md"
 BACKUP = ".claude/settings.json.governor-backup"
 SECTIONS = ["## Enforced rules", "## Advisory rules", "## Disabled rules", "## Commands"]
 HOOK_EVENTS = {
-    "PreToolUse": ("Bash|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|mcp__.*", "governor_pretool.py", 30),
-    "PostToolUse": ("Bash|Edit|Write|MultiEdit|NotebookEdit", "governor_posttool.py", 30),
-    "PostToolUseFailure": ("Bash", "governor_posttool.py", 30),
+    "PreToolUse": ("Bash|PowerShell|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|mcp__.*",
+                   "governor_pretool.py", 30),
+    "PostToolUse": ("Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit", "governor_posttool.py", 30),
+    "PostToolUseFailure": ("Bash|PowerShell", "governor_posttool.py", 30),
     "Stop": (None, "governor_stop.py", 900),
 }
 
 
 class RenderError(ValueError):
     """Refuse to render (P4 pin mismatch, unreadable settings)."""
-
-
-def default_python():
-    """Interpreter name for hooks: the one running Governor now ('python' on Windows, else 'python3')."""
-    return "python" if os.name == "nt" else "python3"
 
 
 def hook_handler(script, hook_python, timeout):
@@ -149,24 +146,47 @@ def coverage_markdown(gov, per_agent):
     return "\n".join(out) + "\n"
 
 
-def merge_settings(repo, deny, ask, hooks, managed_old):
-    """Merge into .claude/settings.json: back up once, drop previous Governor entries, add current (R5)."""
+def load_settings(repo):
+    """Read and shape-check .claude/settings.json before anything is written (R5, I2 no partial output)."""
     path = repo / ".claude" / "settings.json"
-    if path.exists():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise RenderError(f"refused: existing .claude/settings.json is not valid JSON ({exc}) (R5)")
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise RenderError(f"refused: existing .claude/settings.json is not valid JSON ({exc}) (R5)")
+    if not isinstance(data, dict):
+        raise RenderError("refused: .claude/settings.json must be a JSON object (R5)")
+    perms = data.get("permissions", {})
+    if not isinstance(perms, dict) or any(not isinstance(perms.get(k, []), list) for k in ("allow", "deny", "ask")):
+        raise RenderError("refused: .claude/settings.json permissions must be an object of lists (R5)")
+    hooks = data.get("hooks", {})
+    if not isinstance(hooks, dict) or any(
+            not isinstance(v, list) or not all(isinstance(g, dict) and isinstance(g.get("hooks", []), list) for g in v)
+            for v in hooks.values()):
+        raise RenderError("refused: .claude/settings.json hooks must map events to lists of matcher groups (R5)")
+    return data
+
+
+def merge_settings(repo, deny, ask, hooks, managed_old, data):
+    """Merge into .claude/settings.json: back up once, drop Governor's previous entries, add current (R5).
+
+    Returns {"deny": [...], "ask": [...]}: only the entries Governor itself added. An entry the user already
+    had (even if identical to a pack entry) stays the user's and is never removed by Governor."""
+    path = repo / ".claude" / "settings.json"
+    if data is not None:
         backup = repo / BACKUP
         if not backup.exists():
             shutil.copy2(path, backup)
     else:
         data = {}
     perms = data.setdefault("permissions", {})
+    owned = {}
     for key, new in (("deny", deny), ("ask", ask)):
         old_owned = set(managed_old.get(key, []))
         kept = [e for e in perms.get(key, []) if e not in old_owned]
-        perms[key] = kept + [e for e in new if e not in kept]
+        owned[key] = [e for e in new if e not in kept]
+        perms[key] = kept + owned[key]
         if not perms[key]:
             del perms[key]
     hk = data.setdefault("hooks", {})
@@ -185,6 +205,7 @@ def merge_settings(repo, deny, ask, hooks, managed_old):
         del data["permissions"]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return owned
 
 
 def render(repo):
@@ -194,13 +215,18 @@ def render(repo):
     if gov is None:
         raise RenderError("refused: no governance.yaml (R1)")
     verify_pins(gov)
+    settings = load_settings(repo) if "claude-code" in gov["packs"] else None
     managed_path = repo / MANAGED
-    managed_old = json.loads(managed_path.read_text(encoding="utf-8")) if managed_path.exists() else {}
+    try:
+        managed_old = json.loads(managed_path.read_text(encoding="utf-8")) if managed_path.exists() else {}
+    except json.JSONDecodeError as exc:
+        raise RenderError(f"refused: {MANAGED} is corrupt ({exc}); restore it from git (R5)")
+    managed_old = managed_old if isinstance(managed_old, dict) else {}
     written, per_agent, managed = [], {}, {"_comment": "Generated by Governor (R4, R5). Lists what Governor owns.",
                                           "deny": [], "ask": [], "hook_events": [], "claude_md_owned": False}
     if "claude-code" in gov["packs"]:
         per_agent["claude-code"] = split_rules(gov, "claude-code")
-        written += _render_claude(repo, gov, *per_agent["claude-code"], managed_old, managed)
+        written += _render_claude(repo, gov, *per_agent["claude-code"], managed_old, managed, settings)
     if "codex" in gov["packs"]:
         per_agent["codex"] = split_rules(gov, "codex")
         written.append(_render_codex(repo, gov, *per_agent["codex"]))
@@ -237,7 +263,7 @@ def _render_codex(repo, gov, rules, disabled):
     return path
 
 
-def _render_claude(repo, gov, rules, disabled, managed_old, managed):
+def _render_claude(repo, gov, rules, disabled, managed_old, managed, settings):
     """Claude Code outputs (R2)."""
     enabled = [r for r in rules if r["id"] not in disabled]
     deny = [d for r in enabled for d in r.get("deny", [])]
@@ -274,9 +300,9 @@ def _render_claude(repo, gov, rules, disabled, managed_old, managed):
                              encoding="utf-8")
         written.append(claude_md)
 
-    merge_settings(repo, deny, ask, hooks, managed_old)
+    owned = merge_settings(repo, deny, ask, hooks, managed_old, settings)
     written.append(repo / ".claude" / "settings.json")
-    managed.update(deny=deny, ask=ask, hook_events=sorted(hooks), claude_md_owned=owns_claude_md)
+    managed.update(deny=owned["deny"], ask=owned["ask"], hook_events=sorted(hooks), claude_md_owned=owns_claude_md)
     return written
 
 

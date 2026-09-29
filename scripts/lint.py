@@ -1,4 +1,4 @@
-"""Lint rendered Governor output (SPEC V1-V7, R3, R4, R6).
+"""Lint rendered Governor output (SPEC V1-V8, R3, R4, R6).
 
 Usage: python scripts/lint.py <repo>   -> exit 0 clean, 1 on any failure (V7)
 """
@@ -8,12 +8,14 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import governance  # noqa: E402
 import render  # noqa: E402
 from packs import PackError  # noqa: E402
+from pyfind import works  # noqa: E402
 
 LINE_CAP = 150
 # V4: extended only by editing SPEC V4.
@@ -49,7 +51,49 @@ def lint(repo):
         _lint_codex(repo, gov, fails)
     if "claude-code" in gov["packs"]:
         _lint_claude(repo, gov, managed, fails, warns)
+    _lint_integrity(repo, managed, fails)
     return fails, warns
+
+
+def _norm(text):
+    return text.replace("\r\n", "\n")
+
+
+def _agents_block(text):
+    if render.BLOCK_START in text and render.BLOCK_END in text:
+        return text.split(render.BLOCK_START, 1)[1].split(render.BLOCK_END, 1)[0]
+    return None
+
+
+def _lint_integrity(repo, managed, fails):
+    """V8: every Governor-generated file equals a fresh render of governance.yaml. Catches hooks or
+    config edited by hand or by the agent (for example a pretool hook replaced with sys.exit(0))."""
+    tmp = Path(tempfile.mkdtemp(prefix="governor-lint-"))
+    try:
+        for rel in ("governance.yaml", "CLAUDE.md", "AGENTS.md", ".claude/settings.json", render.MANAGED):
+            if (repo / rel).exists():
+                (tmp / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(repo / rel, tmp / rel)
+        try:
+            render.render(tmp)
+        except (render.RenderError, PackError) as exc:
+            fails.append(f"V8: cannot re-render for comparison: {exc}")
+            return
+        expected = json.loads((tmp / render.MANAGED).read_text(encoding="utf-8")).get("files", [])
+        for rel in sorted(set(expected) | set(managed.get("files", []))):
+            want, have = tmp / rel, repo / rel
+            if not have.exists():
+                fails.append(f"V8: {rel} missing; re-run render")
+            elif not want.exists() or _norm(want.read_text(encoding="utf-8")) != _norm(have.read_text(encoding="utf-8")):
+                fails.append(f"V8: {rel} differs from a fresh render (edited or stale); re-run render")
+        if (tmp / render.AGENTS_MD).exists():
+            want = _agents_block((tmp / render.AGENTS_MD).read_text(encoding="utf-8"))
+            have_p = repo / render.AGENTS_MD
+            have = _agents_block(have_p.read_text(encoding="utf-8")) if have_p.exists() else None
+            if want is not None and _norm(want) != _norm(have or ""):
+                fails.append("V8: AGENTS.md Governor block differs from a fresh render")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def _lint_codex(repo, gov, fails):
@@ -158,7 +202,22 @@ def _lint_claude(repo, gov, managed, fails, warns):
         json.loads((repo / ".claude" / "hooks" / "governor_config.json").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         fails.append(f"V6: governor_config.json invalid: {exc}")
-    hooks = settings.get("hooks", {})
+    # V6: settings that switch hooks or permissions off entirely
+    for name in ("settings.json", "settings.local.json"):
+        p = repo / ".claude" / name
+        try:
+            data = json.loads(p.read_text(encoding="utf-8-sig")) if p.exists() else {}
+        except (OSError, json.JSONDecodeError):
+            data = {}
+        data = data if isinstance(data, dict) else {}
+        if data.get("disableAllHooks") is True:
+            fails.append(f"V6: .claude/{name} sets disableAllHooks: every Governor hook is off")
+        if data.get("allowManagedHooksOnly") is True:
+            fails.append(f"V6: .claude/{name} sets allowManagedHooksOnly: project hooks will not run")
+        mode = (data.get("permissions") or {}).get("defaultMode") if isinstance(data.get("permissions"), dict) else None
+        if mode == "bypassPermissions":
+            warns.append(f"V6: .claude/{name} sets defaultMode bypassPermissions: ask rules will not prompt")
+    hooks = settings.get("hooks", {}) if isinstance(settings.get("hooks"), dict) else {}
     pythons = set()
     for event in render.HOOK_EVENTS:
         ours = [h for g in hooks.get(event, []) if isinstance(g, dict) for h in g.get("hooks", [])
@@ -167,9 +226,9 @@ def _lint_claude(repo, gov, managed, fails, warns):
             fails.append(f"V6: {event} hook not registered in settings.json")
         pythons |= {h.get("command", "") for h in ours if h.get("args")}
     for py in sorted(pythons):
-        if shutil.which(py) is None:
-            warns.append(f"V6: hook interpreter '{py}' is not on PATH here; hooks would error and NOT block. "
-                         "Set hook_python in governance.yaml and re-render.")
+        if not works(py):
+            fails.append(f"V6: hook interpreter '{py}' does not start Python 3.8+ here; hooks would error and "
+                         "NOT block. Set hook_python in governance.yaml and re-render.")
     for event, groups in hooks.items():
         if not isinstance(groups, list) or not all(isinstance(g, dict) and isinstance(g.get("hooks"), list)
                                                    for g in groups):

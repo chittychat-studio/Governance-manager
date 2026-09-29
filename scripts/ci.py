@@ -14,8 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import governance  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-RUNTIME_SCRIPTS = ["init.py", "ci.py", "intake.py", "detect.py", "ask.py", "tier.py", "packs.py", "select_pack.py", "sign_pack.py",
-                   "governance.py", "render.py", "lint.py", "exceptions.py", "drift.py", "doctor.py", "report.py"]
+EXCLUDED_SCRIPTS = {"verify.py", "c1_budget.py"}  # spend credits (E4); never in client CI (D4)
 WORKFLOW = ".github/workflows/governor.yml"
 
 
@@ -26,10 +25,9 @@ def install(repo):
     if dst.exists():
         shutil.rmtree(dst)
     (dst / "scripts").mkdir(parents=True)
-    for name in RUNTIME_SCRIPTS:
-        src = ROOT / "scripts" / name
-        if src.exists():
-            shutil.copy2(src, dst / "scripts" / name)
+    for src in sorted((ROOT / "scripts").glob("*.py")):
+        if src.name not in EXCLUDED_SCRIPTS:
+            shutil.copy2(src, dst / "scripts" / src.name)
     shutil.copytree(ROOT / "packs", dst / "packs")
     shutil.copytree(ROOT / "templates" / "hooks", dst / "templates" / "hooks")
     for name in ("tiers.yaml", "intake.schema.json"):
