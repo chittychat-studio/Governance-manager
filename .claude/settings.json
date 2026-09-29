@@ -3,7 +3,6 @@
     "allow": [
       "Bash(python -m pytest *)",
       "Bash(python scripts/*)",
-      "Bash(pip install *)",
       "Bash(git status)",
       "Bash(git diff *)",
       "Bash(git add *)",
@@ -12,6 +11,7 @@
     ],
     "ask": [
       "Bash(git push *)",
+      "Bash(pip install *)",
       "Bash(claude *)",
       "Bash(python scripts/verify.py *)",
       "WebFetch"
