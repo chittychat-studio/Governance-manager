@@ -8,6 +8,8 @@
 
 Tier 3, decided by T3. Data classes: auth, pii; exposure: public; tenancy: single.
 
+Test command run by the Stop hook: `python -m pytest`
+
 ## Rules
 
 | Agent | Enforced | Advisory | Disabled |

@@ -20,8 +20,8 @@ def decision(proc):
 
 
 @pytest.mark.parametrize("cmd", [
-    "rm -rf build/", "rm -fr /", "rm -r -f x", "rm --recursive --force x", "/bin/rm -rf x",
-    "sudo rm -rf /var", "bash -c 'rm -rf build/'", "cd x && rm -rf y", "FOO=1 rm -Rf x",
+    "rm -rf app/", "rm -fr /", "rm -r -f x", "rm --recursive --force x", "/bin/rm -rf x",
+    "sudo rm -rf /var", "bash -c 'rm -rf app/'", "cd x && rm -rf y", "FOO=1 rm -Rf x",
     "git push --force origin main", "git push -f", "git -C . push --force", "git push origin +main",
     "git -c push.default=current push -f", "cat .env", "less .env.production", "cp ~/.aws/credentials /tmp",
     "cat ~/.ssh/id_rsa",

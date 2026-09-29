@@ -48,6 +48,9 @@ def build(repo, today=None, verify_path=VERIFY_RESULT):
              f"Tier {t['effective']}" + (f" (lowered from {t['computed']} by exception)" if t["effective"] < t["computed"]
                                        else "") + f", decided by {', '.join(t['matched'])}. "
              f"Data classes: {', '.join(i['data_classes'])}; exposure: {i['exposure']}; tenancy: {i['tenancy']}.",
+             "", f"Test command run by the Stop hook: `{i['test_cmd']}`"
+             + (" · corrected by the user: " + ", ".join(c["field"] for c in gov.get("corrections", []))
+                if gov.get("corrections") else ""),
              "", "## Rules", "", "| Agent | Enforced | Advisory | Disabled |", "|---|---|---|---|"]
     mappings = []
     for agent in gov["packs"]:

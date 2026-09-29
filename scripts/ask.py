@@ -49,6 +49,8 @@ def parse_answer(field, raw):
     kind, _ = QUESTION_BANK[field]
     allowed = enum_for(field)
     if isinstance(raw, list):
+        if not kind.startswith("many") and len(raw) != 1:
+            raise IntakeError(f"{field}: expected one value, got a list of {len(raw)} (I1a)")
         items = [str(x).strip() for x in raw]
     else:
         items = [x.strip() for x in str(raw).split(",")] if kind.startswith("many") else [str(raw).strip()]
@@ -76,6 +78,42 @@ def build_intake(detected, answers):
         if k not in intake:
             raise IntakeError(f"refused: required field '{k}' is empty (I2)")
     return validate(intake)
+
+
+# Corrections to detected facts may only keep or raise risk. Lowering it goes through an exception (T6, X4).
+RISK_ORDER = {"exposure": ["internal", "public"], "tenancy": ["single", "multi"]}
+
+
+def apply_corrections(detected, corrections):
+    """Return detected facts with the user's corrections applied (I3a). Refuses risk-lowering changes."""
+    out = dict(detected)
+    applied = []
+    for field, raw in corrections.items():
+        if field not in QUESTION_BANK:
+            raise IntakeError(f"refused: unknown field '{field}'")
+        value = parse_answer(field, raw)
+        old = detected[field]
+        if field == "data_classes":
+            dropped = sorted(set(old) - set(value) - {"none"})
+            if dropped:
+                raise IntakeError(f"refused: removing detected data class(es) {dropped} would lower the tier. "
+                                  "If detection is wrong, keep them and record a tier exception with "
+                                  "scripts/exceptions.py --tier N --reason ... (T6, X4)")
+        if field == "agent":
+            dropped = sorted(set(old) - set(value))
+            if dropped:
+                raise IntakeError(f"refused: removing detected agent(s) {dropped} would switch enforcement off "
+                                  "for them (I3a)")
+        if field == "test_cmd" and str(value).strip().lower() == "none" and str(old).strip().lower() != "none":
+            raise IntakeError(f"refused: changing the detected test command {old!r} to 'none' would switch the "
+                              "Stop-hook test gate off (I1c). Record a rule exception for it instead (X1)")
+        if field in RISK_ORDER and RISK_ORDER[field].index(value) < RISK_ORDER[field].index(old):
+            raise IntakeError(f"refused: changing detected {field} {old!r} to {value!r} would lower the tier. "
+                              "Record a tier exception instead (T6, X4)")
+        if value != old:
+            applied.append({"field": field, "detected": old, "answer": value})
+        out[field] = value
+    return out, applied
 
 
 def run(detect_result, answer_source):

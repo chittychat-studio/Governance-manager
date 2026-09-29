@@ -1,6 +1,10 @@
 # Base pack (SPEC P6, P7, P8). Hand-written; selection is pure lookup (P1).
+# Hook patterns run on every normalised segment of a Bash or PowerShell command (see
+# templates/hooks/governor_common.py normalise) and on the raw command, case-insensitively.
+# Text matching is not an OS sandbox: variables, globs built at runtime and interpreters reading
+# files themselves can still get through (P7). Patterns fail closed where that is cheap.
 id: tier1/fastapi-postgres/claude-code
-version: 1
+version: 3
 tier: 1
 stack: fastapi-postgres
 agent: claude-code
@@ -19,15 +23,43 @@ rules:
       - Read(./**/*.key)
       - Read(./**/id_rsa*)
       - Read(./**/id_ed25519*)
+      - Read(./**/id_ecdsa*)
       - Read(~/.aws/**)
       - Read(~/.config/gcloud/**)
       - Read(~/.azure/**)
       - Read(~/.kube/config)
       - Read(~/.docker/config.json)
     hook:
-      path_deny: ['.env', '.env.*', '*.pem', '*.key', 'id_rsa*', 'id_ed25519*', '~/.aws/*', '~/.config/gcloud/*', '~/.azure/*', '~/.kube/config', '~/.docker/config.json']
+      path_deny: ['.env', '.env.*', '*.pem', '*.key', 'id_rsa*', 'id_ed25519*', 'id_ecdsa*', 'id_dsa*',
+                  '~/.aws/*', '*/.aws/*', '~/.config/gcloud/*', '*/.config/gcloud/*', '~/.azure/*', '*/.azure/*',
+                  '~/.kube/config', '*/.kube/config', '~/.docker/config.json', '*/.docker/config.json']
       path_allow: ['.env.example', '.env.sample', '.env.template']
-      bash_deny: ['(?<![\w.-])\.env(?!\.example|\.sample|\.template)(\.[\w-]+)?(?![\w.-])', '\.aws/credentials', '(?<![\w.-])id_(rsa|ed25519)(?![\w.-]*\.pub)']
+      bash_deny:
+        - '(?<![\w.-])\.env(?!\.example|\.sample|\.template)(\.[\w-]+)?(?![\w.-])'
+        - '(^|[\s/''"=])\.(e|en|env)[\[*?]'
+        - '(^|[\s/''"=])\.\[[^\]]*e'
+        - '(?<![\w.-])\.env[\w.-]*[\[*?]'
+        - '\.pem\b'
+        - '(?<![\w.])[\w-]+\.key(?=$|[\s''"])'
+        - '(?<![\w.-])id_(rsa|ed25519|ecdsa|dsa)(?![\w.-]*\.pub)'
+        - '\.ssh[/\\]id_[\w-]+(?![\w.-])'
+        - '\.ssh[/\\]\S*[*?\[]'
+        - '\S*[*?\[]\S*[/\\](credentials|config\.json)\b'
+        - '\.aws[/\\]'
+        - '\.config[/\\]gcloud'
+        - '\.azure[/\\]'
+        - '\.kube[/\\]'
+        - '\.docker[/\\]'
+        - '/proc/[^/\s]+/environ'
+      bash_ask:
+        - '^docker(\s+-\S+)*\s+compose\b.*\sconfig\b'
+        - '^docker-compose\b.*\sconfig\b'
+      bash_allow:
+        # onboarding steps that name .env without reading it
+        - '^cp\s+(\S*/)?\.env\.(example|sample|template)\s+(\S*/)?\.env(\.local)?\s*$'
+        - '^touch\s+(\S*/)?\.env(\.local)?\s*$'
+        - '^(uvicorn|fastapi|gunicorn|hypercorn|docker|docker-compose|podman)\b.*--env-file[= ]'
+        - '^docker(\s+-\S+)*\s+compose\b.*--env-file[= ]'
   - id: P6-mcp-allowlist
     spec: P6
     text: Only MCP servers listed in governance.yaml (mcp_allow) may be used; all others are blocked.
@@ -42,27 +74,60 @@ rules:
     enforcement: enforced
     mechanism: [deny_rule, hook]
     agents: [claude-code, codex]
-    deny: ['Bash(rm -rf *)', 'Bash(rm -fr *)', 'Bash(rm -r -f *)', 'Bash(rm --recursive --force *)']
+    deny: ['Bash(rm -rf *)', 'Bash(rm -fr *)', 'Bash(rm -r -f *)', 'Bash(rm --recursive --force *)',
+           'PowerShell(Remove-Item * -Recurse * -Force*)', 'PowerShell(Remove-Item * -Force * -Recurse*)']
     hook:
-      bash_deny: ['^rm\s+(?=.*(-[a-zA-Z]*r|--recursive))(?=.*(-[a-zA-Z]*f|--force))']
+      bash_deny:
+        - '^(rm|remove-item|ri|del|erase|rd|rmdir)(?=\s)(?=.*\s(?!-force\b)(-[a-z]{0,3}r[a-z]{0,3}|--recursive|-recurse)\b)(?=.*\s(-[a-z]{0,3}f[a-z]{0,3}|--force|-force|-fo)\b)'
+        - '^(rd|rmdir|del|erase)(?=\s)(?=.*\s/s\b)(?=.*\s/q\b)'
+        - '^find\b.*\s-delete\b'
+        - '\brmtree\s*\('
+        - 'shutil\.rmtree'
+        - '^rimraf\b'
+        - '^git(\s+-\S+)*\s+clean\b(?=.*\s-[a-z]*x)'
+        - 'directory\]::delete\s*\('
+      bash_allow:
+        # P6a: regenerable directories given as plain relative paths (caches, virtualenvs, build output)
+        - '^find\s+\.?\s*(-\S+\s+\S+\s+)*-name\s+[''"]?(\*\.pyc|\*\.pyo|__pycache__)[''"]?\s+(-type\s+[fd]\s+)?-delete\s*$'
+        - '^(rm|remove-item|ri|rd|rmdir)\s+(-\S+\s+)*((\./)?([\w.-]+/)*(__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.tox|\.nox|htmlcov|\.coverage|node_modules|\.venv|venv|dist|build|\.next|coverage|\.parcel-cache|\.turbo)/?\s*(-\S+\s*)*)+$'
   - id: P6-force-push
     spec: P6
     text: Force push is blocked.
     enforcement: enforced
     mechanism: [deny_rule, hook]
     agents: [claude-code, codex]
-    deny: ['Bash(git push --force *)', 'Bash(git push -f *)', 'Bash(git push --force-with-lease *)']
+    deny: ['Bash(git push --force *)', 'Bash(git push -f *)', 'Bash(git push --force-with-lease *)',
+           'PowerShell(git push --force *)', 'PowerShell(git push -f *)']
     hook:
-      bash_deny: ['^git\b.*\bpush\b.*(\s--force(-with-lease)?\b|\s-[a-zA-Z]*f\b|\s\+\S+)']
+      bash_deny: ['^git(\s+-\S+)*\s+push\b.*(\s--force(-with-lease|-if-includes)?\b|\s-[a-z]*f[a-z]*\b|\s\+\S+|\s--mirror\b)']
   - id: P6-prod-deploy
     spec: P6
     text: Production deploy and infrastructure apply commands need human approval.
     enforcement: enforced
     mechanism: [deny_rule, hook]
     agents: [claude-code, codex]
-    ask: ['Bash(fly deploy *)', 'Bash(flyctl deploy *)', 'Bash(terraform apply *)', 'Bash(kubectl apply *)', 'Bash(heroku *)', 'Bash(docker push *)', 'Bash(make deploy *)', 'Bash(./deploy.sh *)']
+    ask: ['Bash(fly deploy *)', 'Bash(flyctl deploy *)', 'Bash(terraform apply *)', 'Bash(kubectl apply *)',
+          'Bash(heroku *)', 'Bash(docker push *)', 'Bash(make deploy *)', 'Bash(./deploy.sh *)']
     hook:
-      bash_ask: ['^(fly|flyctl)\s+deploy\b', '^terraform\s+(apply|destroy)\b', '^kubectl\s+(apply|delete)\b', '^heroku\b', '^docker\s+push\b', '^make\s+deploy', '(^|/)deploy(\.sh)?(\s|$)', '^(npm|pnpm|yarn)\s+run\s+deploy', '^vercel\b.*--prod']
+      bash_ask:
+        - '^(fly|flyctl)\b.*\sdeploy\b'
+        - '^terraform\b.*\s(apply|destroy)\b'
+        - '^(kubectl|oc)\b.*\s(apply|delete|replace|patch|rollout|scale)\b'
+        - '^helm\b.*\s(install|upgrade|uninstall|rollback)\b'
+        - '^heroku\b'
+        - '^git(\s+-\S+)*\s+push\s+heroku\b'
+        - '^docker\b.*\spush\b'
+        - '^make\b.*deploy'
+        - '(^|/)deploy[\w.-]*(\s|$)'
+        - '^(ba|z|k|da)?sh\s+\S*deploy'
+        - '^(npm|pnpm|yarn|bun)\b.*\bdeploy\b'
+        - '^vercel\b.*--prod'
+        - '^netlify\b.*\bdeploy\b.*--prod'
+        - '^gcloud\b.*\sdeploy\b'
+        - '^aws\b.*\s(deploy|cloudformation\s+(deploy|create-stack|update-stack))\b'
+        - '^(serverless|sls)\s+deploy\b'
+        - '^az\b.*\s(deployment|webapp\s+up)\b'
+        - '^railway\s+up\b'
   - id: P6-secret-scan
     spec: P6
     text: Every Edit/Write is scanned for secrets; a hit is reported back and logged.
@@ -95,4 +160,31 @@ rules:
     agents: [claude-code, codex]
     ask: ['Bash(claude *)', 'Bash(openai *)', 'Bash(replicate *)']
     hook:
-      bash_ask: ['^claude\b', '^openai\b', '^replicate\b', '^aws\s+bedrock', '^gcloud\s+ai\b']
+      bash_ask: ['^claude\b', '^openai\b', '^replicate\b', '^aws\b.*\sbedrock', '^gcloud\b.*\sai\b']
+  - id: P9-guardrail-self-edit
+    spec: P9
+    text: The agent cannot change its own guardrails (.claude/settings*.json, .claude/hooks/, governance.yaml, Governor state) or run Governor's exception tools.
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    deny: ['Edit(./.claude/settings.json)', 'Edit(./.claude/settings.local.json)', 'Edit(./.claude/hooks/**)',
+           'Edit(./governance.yaml)', 'Edit(./.claude/.governor-managed.json)', 'Edit(./.claude/governor/state/**)',
+           'Edit(~/.claude/settings.json)', 'Edit(~/.claude/settings.local.json)']
+    hook:
+      guard: true
+      path_deny_write: ['.claude/settings.json', '.claude/settings.local.json', '.claude/hooks/*', 'governance.yaml',
+                        '.claude/.governor-managed.json', '.claude/governor/state/*', '.claude/governor/governor.log',
+                        '~/.claude/settings.json', '~/.claude/settings.local.json', '*/.claude/settings.json',
+                        '*/.claude/settings.local.json']
+  - id: P7-obfuscated-exec
+    spec: P7
+    text: Encoded or downloaded commands piped into a shell are blocked (they hide what runs).
+    enforcement: enforced
+    mechanism: [hook]
+    agents: [claude-code, codex]
+    hook:
+      bash_deny:
+        - 'base64\s+(-d|--decode|-D)\b.*\|\s*(sudo\s+)?((ba|z|da|k)?sh|python[\d.]*|perl|node|pwsh|powershell)\b'
+        - '^(pwsh|powershell)\b.*\s-(e|ec|en|enc|encodedcommand)\s'
+        - '\|\s*(iex|invoke-expression)\b'
+        - '(curl|wget|iwr|invoke-webrequest)\b.*\|\s*(sudo\s+)?((ba|z|da|k)?sh|python[\d.]*|iex|invoke-expression)\b'

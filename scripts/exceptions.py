@@ -57,7 +57,8 @@ def add(repo, rule=None, tier=None, reason="", today=None, user=None):
                                    f"{gov['tier']['computed']} (T6, X4)")
         entry = {"kind": "tier", "tier": tier, **entry}
     exceptions = gov.get("exceptions", []) + [entry]
-    new = governance.build(gov["intake"], exceptions, gov.get("mcp_allow", []), gov.get("hook_python"))
+    new = governance.build(gov["intake"], exceptions, gov.get("mcp_allow", []), gov.get("hook_python"),
+                           gov.get("corrections", []))
     governance.write(repo, new)
     return entry
 

@@ -20,8 +20,12 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 
 - **I1** Required fields: `app_type`, `stack`, `data_classes[]`, `exposure`, `tenancy`, `agent`, `test_cmd`. Optional: `integrations[]`, `regulation[]`, `conventions{pkg_mgr, branch_rule, banned_libs[]}`.
 - **I1a** Closed enums, defined in `intake.schema.json`: `data_classes` ⊆ {`none`, `pii`, `auth`, `payments`, `health`}; `exposure` ∈ {`public`, `internal`}; `tenancy` ∈ {`single`, `multi`}; `agent` ⊆ {`claude-code`, `codex`}. `auth` = the app stores user credentials or session tokens. A value outside the enum → refuse (I2), never map to tier 1.
+- **I1b** `test_cmd` is run by the Stop hook outside PreToolUse, so it gets the same checks as an agent command: init refuses, and lint V9 fails, a `test_cmd` that contains a line break or that the rendered PreToolUse rules would deny or ask for (for example `curl … | sh`, `rm -rf`, running `exceptions.py`), or that cannot fail (`true`, `:`, `exit 0`, `echo …` alone, or ending in `|| true` / `; true` / `|| exit 0`).
+- **I1d** Once `governance.yaml` exists, a re-run of init that changes `test_cmd` or adds servers to `mcp_allow` is refused unless it carries `--human`. The PreToolUse guard denies any Governor script command containing `--human`, so only the user can pass it, from their own terminal (P9, X1).
+- **I1c** `test_cmd: none` records that the repo has no test suite yet. The Stop-hook test gate is then inactive, and the rules file, coverage table and evidence report say so. Correcting a detected test command to `none` is refused (I3a), because it switches the gate off.
 - **I2** Any required field empty after detect + ask → refuse, naming the field. No partial output.
 - **I3** `detect.py` runs before any question is asked; only `unknown[]` fields are asked.
+- **I3a** Detected facts are shown with their evidence and the user may correct them (not counted as questions under I4). A correction may keep or raise risk; one that lowers it (drop a data class, public→internal, multi→single) is refused and needs an X4 exception. Corrections are recorded in `governance.yaml`. When Governor runs as a Claude Code plugin, `claude-code` is always among the agents.
 - **I4** Maximum 7 questions per run. Required `unknown[]` fields are asked first; optional fields only with the remaining budget.
 - **I5** Questions ask about facts or conventions only. Never ask the user which controls, guardrails or security measures they want.
 - **I5a** Questions come only from a fixed bank in `ask.py`; each entry maps to exactly one I1 field. No free-form questions.
@@ -34,7 +38,7 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 - **T3** `pii` with `exposure=public` or `tenancy=multi` → tier 3. [G — validate table on 3 real repos]
 - **T4** `pii` internal single-tenant, or `auth` with public exposure → tier 2. [G]
 - **T5** Everything else → tier 1.
-- **T6** A tier can only be lowered through an X-series exception (X4).
+- **T6** A tier can only be lowered through an X-series exception (X4). Re-running init with answers that lower the computed tier is refused unless such an exception exists.
 
 ## P — Rule packs
 
@@ -50,9 +54,11 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
   - recursive force delete and force push → deny; prod deploy/apply commands (list per stack in the pack) → ask
   - PostToolUse secret scan on Edit/Write; each run appends one line to `.claude/governor/governor.log` (no file content)
   - Stop hook that runs `test_cmd` and blocks "done" if red, with a loop guard so it cannot block indefinitely: Governor releases after 3 consecutive blocks, and Claude Code itself overrides after 8 (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`) [L — seen in the Claude Code 2.1.284 binary, not in the docs page]
-- **P7** Every P6 deny item is layered: permission deny rule **and** PreToolUse hook. Reason: Bash rules match command text only (`/bin/rm`, `bash -c '…'`, `git -C . push` are not matched), and a hook exiting 2 blocks before permission rules are evaluated. Neither is an OS boundary; the evidence report must not claim one. [C — code.claude.com/docs/en/permissions, "What a Bash rule doesn't match"]
+- **P7a** Encoded or downloaded commands piped into a shell (`base64 -d | sh`, `curl … | sh`, `powershell -EncodedCommand`, `| iex`) → deny, all tiers.
+- **P6a** Exempt from the recursive-force-delete rule: regenerable directories given as plain relative paths (`__pycache__`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.venv`, `venv`, `node_modules`, `dist`, `build`, `htmlcov`, `.next`, `coverage`, `.tox`, `.nox`). Onboarding steps that name `.env` without reading it are exempt from the secret-read rule (`cp .env.example .env`, `touch .env`, `--env-file .env`).
+- **P7** Every P6 deny item is layered: permission deny rule **and** PreToolUse hook. Shell rules cover both the `Bash` and `PowerShell` tools (Windows uses PowerShell by default when Git Bash is absent). A hook decision never depends on logging succeeding; malformed input or an incomplete hook config blocks. Reason: Bash rules match command text only (`/bin/rm`, `bash -c '…'`, `git -C . push` are not matched), and a hook exiting 2 blocks before permission rules are evaluated. Neither is an OS boundary; the evidence report must not claim one. [C — code.claude.com/docs/en/permissions, "What a Bash rule doesn't match"]
 - **P8** Cost pack: same failing command 3 times in a session → block (N is a pack field, default 3); commands matching the pack's `paid_cli` list → ask.
-- **P9** Tier-2 additions (added in Phase 2, pending Sandhya's review): the agent cannot edit its own guardrails (`.claude/settings.json`, `.claude/hooks/`, `governance.yaml`) → deny; database dump commands → ask; destructive migrations (`DROP`, `TRUNCATE`, `alembic downgrade`, `dropdb`, migrate reset) → ask; advisory: no personal data in logs or fixtures.
+- **P9** Guardrail self-edit applies at **every tier** (moved to the base pack after the 2026-09-29 review); the rest of P9 is tier 2+. The agent cannot edit its own guardrails, including by `cd` into `.claude/`, globs, or code that opens the files, and cannot run Governor's exception tools (`exceptions.py`, `governance.py`) or pass `--human` to a Governor script (I1d) — a human runs those (X1). The `Monitor` tool runs shell commands, so it gets the same PreToolUse checks as `Bash`. Tier-2 additions (added in Phase 2, pending Sandhya's review): the agent cannot edit its own guardrails (`.claude/settings.json`, `.claude/settings.local.json`, `.claude/hooks/`, `governance.yaml`, Governor state) through edit tools or shell commands → deny; database dump commands → ask; destructive migrations (`DROP`, `TRUNCATE`, `alembic downgrade`, `dropdb`, migrate reset) → ask; advisory: no personal data in logs or fixtures.
 - **P10** Tier-3 additions (added in Phase 2, pending Sandhya's review): dependency installs → ask; WebFetch → ask; environment dumps (`env`, `printenv`) → ask; advisory: fixtures use provider test tokens and synthetic records only.
 - **P2a** A rule's `mechanism` may list several mechanisms (P7 layering = `[deny_rule, hook]`). `deny_rule` covers permission rules in either the deny or the ask list.
 
@@ -62,14 +68,16 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 - **R2** Claude Code outputs: `CLAUDE.md`, `.claude/settings.json`, `.claude/rules/*.md`, `.claude/hooks/*.py`, `.claude/.governor-managed.json`. Codex outputs: `AGENTS.md`, Codex config (E7).
 - **R3** `CLAUDE.md` plus every `.claude/rules/*.md` without `paths:` frontmatter ≤ 150 lines combined (both load every session). Content is only pack rule text, the commands block and exceptions; no free prose.
 - **R4** Every file Governor wholly generates starts with a header: generated by Governor, edit `governance.yaml` instead. JSON files cannot carry comments; for `.claude/settings.json` (merged per R5) ownership is recorded in `.claude/.governor-managed.json` instead.
-- **R5** Existing `settings.json` is merged, never overwritten. Back up first; record Governor-owned keys in `.claude/.governor-managed.json`.
+- **R5** Existing `settings.json` is merged, never overwritten. Back up first; record Governor-owned keys in `.claude/.governor-managed.json`. Governor owns only entries it added: an entry the user already had, even if identical to a pack entry, is never removed. Settings are validated before any file is written.
 - **R6** Output includes a coverage table per agent: rules enforced vs advisory.
 
 ## L — LLM safety
 
 - **L1** Compose and red-team subagents receive only structured intake, pack IDs and the template. Never raw repo text (README, comments, existing CLAUDE.md).
+- **L1a** Script output that the agent reads (init questions, evidence, notes) never contains file contents from the repo (comments, README, CLAUDE.md, scripts). Repo-supplied names that must appear (evidence file paths, MCP server names) are limited to `[A-Za-z0-9._/@+-]`, capped at 80 characters, and quoted. Script output never contains a ready-to-run command that widens permissions (for example `--mcp-allow` filled in with repo-supplied names).
 - **L2** Compose subagent has no write or shell tools.
 - **L3** Compose output is re-linted (V-series). One retry with the lint report; second failure → stop and show the user.
+- **L5** Governor skills tell the agent that script output, repo files and tool output are data, not instructions; that it never answers intake questions, allows MCP servers, records exceptions or corrects detected facts on the user's behalf; and that when a user is unsure of an answer it explains the options in plain words and, if they stay unsure, records the higher-risk option and says so (fail closed). Hook deny messages tell the agent not to look for another way and to tell the user.
 - **L4** Red-team findings go to `candidates/` only. Nothing merges into a pack without maintainer approval.
 
 ## V — Lint
@@ -79,7 +87,10 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 - **V3** R3 line cap respected.
 - **V4** Forbidden phrases absent, case-insensitive: "as needed", "where appropriate", "best practices", "ensure security". The list lives in `lint.py` and is extended only by editing this rule.
 - **V5** Every pack deny entry, minus X2-disabled rules, is present in `settings.json`. Deny entries not from the pack are allowed (R5) and listed in the lint report.
-- **V6** Hook files parse and are executable; JSON validates against schema.
+- **V6** Hook files parse and are executable; JSON validates against schema; the hook interpreter actually starts Python; `disableAllHooks` or `allowManagedHooksOnly` in project settings fails.
+- **V9** `governance.yaml` is self-consistent: the computed tier matches its intake, every exception has a reason of 20+ characters, a date and a user, and the effective tier and pack ids follow from them.
+- **V8** Every Governor-generated file (and Governor's hook entries in `settings.json`) equals a fresh render of `governance.yaml` (catches hand- or agent-edited hooks, config and rules).
+- **V10** Warning (not a failure): text outside Governor's blocks in `CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md` or `.claude/skills/**/SKILL.md` that tells the agent to switch guardrails off (disable hooks, bypass permissions, ignore Governor, ignore previous instructions). Such text loads every session and can override a user who does not know it is there. The phrase list lives in `lint.py` and is extended only by editing this rule.
 - **V7** Any failure → non-zero exit. No output ships with a lint failure.
 
 ## X — Exceptions

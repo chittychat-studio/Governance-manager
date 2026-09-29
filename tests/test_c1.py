@@ -27,6 +27,20 @@ def test_shipped_budget_is_unapproved():
     assert c1_budget.per_run_cap() is None
 
 
+def test_monthly_ledger(tmp_path):
+    """E4/C1a: refuse without a run count, and after 31 runs in the month."""
+    p = tmp_path / "b.yaml"
+    p.write_text("monthly_cap_usd: 62\napproved_by: Sandhya\napproved_on: 2026-09-29\n")
+    assert c1_budget.main([], path=p) == 3
+    assert c1_budget.main(["--runs-this-month", "31"], path=p) == 0
+    assert c1_budget.main(["--runs-this-month", "32"], path=p) == 3
+
+
+def test_issue_step_only_on_verify_failure():
+    text = (ROOT / ".github/workflows/compat.yml").read_text()
+    assert "steps.verify.outcome == 'failure'" in text and "--runs-this-month" in text
+
+
 def test_verify_cap_requires_api_billing():
     assert verify.main(["--cap-usd", "5", "--plan"]) == 6
 

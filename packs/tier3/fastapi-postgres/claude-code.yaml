@@ -1,6 +1,6 @@
 # Tier 3 = tier 2 + P10 (SPEC P3, P10).
 id: tier3/fastapi-postgres/claude-code
-version: 1
+version: 3
 tier: 3
 stack: fastapi-postgres
 agent: claude-code
@@ -12,9 +12,19 @@ rules:
     enforcement: enforced
     mechanism: [deny_rule, hook]
     agents: [claude-code, codex]
-    ask: ['Bash(pip install *)', 'Bash(poetry add *)', 'Bash(uv add *)', 'Bash(uv pip install *)', 'Bash(npm install *)', 'Bash(pnpm add *)', 'Bash(yarn add *)']
+    ask: ['Bash(pip install *)', 'Bash(poetry add *)', 'Bash(uv add *)', 'Bash(uv pip install *)', 'Bash(npm install *)',
+          'Bash(pnpm add *)', 'Bash(yarn add *)']
     hook:
-      bash_ask: ['^(python\d?\s+-m\s+)?pip\d?\s+install\b', '^(poetry|uv)\s+add\b', '^uv\s+pip\s+install\b', '^(npm|pnpm)\s+(install|i|add)\b', '^yarn\s+add\b']
+      bash_ask:
+        - '^(python[\d.]*\s+(-\S+\s+)*-m\s+)?pip[\d.]*(\s+-\S+)*\s+install\b'
+        - '^py\s+(-\S+\s+)*-m\s+pip(\s+-\S+)*\s+install\b'
+        - '^(poetry|uv|pdm|hatch|pipenv|rye)(\s+-\S+)*\s+(add|install|sync)\b'
+        - '^uv(\s+-\S+)*\s+pip\s+install\b'
+        - '^(npm|pnpm|bun)(\s+-\S+)*\s+(install|i|add|ci)\b'
+        - '^yarn(\s+-\S+)*\s+(add|install)\b'
+        - '^(pipx|conda|mamba|gem|cargo)(\s+-\S+)*\s+(install|add)\b'
+        - '^go(\s+-\S+)*\s+(install|get)\b'
+        - '^(install-module|install-package)\b'
   - id: P10-webfetch-ask
     spec: P10
     text: Web fetches need human approval.
@@ -24,12 +34,18 @@ rules:
     ask: ['WebFetch']
   - id: P10-env-dump
     spec: P10
-    text: Dumping the environment (env, printenv) needs human approval.
+    text: Dumping the environment (env, printenv, set) needs human approval.
     enforcement: enforced
     mechanism: [hook]
     agents: [claude-code, codex]
     hook:
-      bash_ask: ['^(env|printenv)\s*$', '^(env|printenv)\s*\|']
+      bash_ask:
+        - '^(env|printenv|set|compgen\s+-v)\s*$'
+        - '^(export|declare|typeset)(\s+-[a-z]*)?\s*$'
+        - '^printenv\b'
+        - '/proc/[^\s]*/environ'
+        - '^(get-childitem|gci|dir|ls|get-item)\s+env:'
+        - '\[(system\.)?environment\]::getenvironmentvariables'
   - id: P10-synthetic-fixtures
     spec: P10
     text: Fixtures use provider test tokens and synthetic records only; never real card, health or personal records.

@@ -24,19 +24,24 @@ Packs exist for **FastAPI + Postgres** only (for example DeckForge); other stack
 
 1. `git switch -c governor-trial` in the target repo, so everything is one `git diff` to review or discard.
 2. In Claude Code in that repo: `/governor:init`, answer the questions it asks.
-3. `python -m pip show pyyaml` must work with the same `python` the hooks use: `governance.yaml` → `hook_python`
-   (`python` on Windows, `python3` elsewhere). Lint warns if that command is not on PATH, because a hook that
-   cannot start does **not** block anything.
+3. Check `governance.yaml` → `hook_python` (the command the hooks run with; init picks the first of
+   `python`/`python3` that really starts Python). Lint **fails** if it does not start, because a hook that
+   cannot start does not block anything. Hooks need only the standard library; PyYAML is for the scripts.
 4. Restart Claude Code in the repo (settings and hooks load at session start), then check the hooks fire
    using throwaway targets only, never real secrets or real folders, in case a hook fails open:
    create `governor-test-dir/` and a `.env.governor-test` holding a fake value, then ask Claude to run
    `rm -rf governor-test-dir` and to read `.env.governor-test`. Both must be refused citing a Governor rule,
    the folder must still exist, and `.claude/governor/governor.log` must show `deny P6-rm-rf` and
-   `deny P6-secret-read`. Delete both test files afterwards yourself.
+   `deny P6-secret-read`. On Windows, repeat with PowerShell wording: ask Claude to run
+   `Remove-Item -Recurse -Force governor-test-dir` and `Get-Content .env.governor-test`. Both must be refused
+   too. Delete both test files afterwards yourself.
 5. Undo: `git switch -` and delete the branch. Your original settings are also saved in
    `.claude/settings.json.governor-backup`.
 
-Hooks run in exec form (no shell), so they behave the same whether Claude Code uses Git Bash or PowerShell.
+Hooks are launched in exec form (no shell), and their shell rules cover both Claude Code's Bash tool and its
+PowerShell tool (the Windows default when Git Bash is absent). Shell rules match command text: they stop the
+commands an agent normally writes, not a determined attacker (variables, interpreters opening files). The
+evidence report says so; it is not a sandbox.
 
 ## Use
 
@@ -51,6 +56,23 @@ Hooks run in exec form (no shell), so they behave the same whether Claude Code u
 Packs exist for `fastapi-postgres` only. Other stacks are refused, not guessed.
 Status is always one of generated / linted / verified. Only `scripts/verify.py`, run locally with
 approval, can produce "verified", and only for the reference fixture.
+
+## Evals
+
+`python scripts/eval.py` scores the deterministic layer against labelled corpora in `evals/` (attack and
+everyday commands fired at the real rendered hooks for Bash and PowerShell, repo layouts through detect and
+init, secret-scan lines, multi-step pipeline scenarios) and fails if any gate in `evals/thresholds.yaml` fails.
+The latest scorecard is `evals/results/latest.md`; CI runs it on every PR. It does not measure live-agent
+behaviour; that is the cost-gated Q-series (`scripts/verify.py`).
+
+Once Governor is installed, the agent cannot weaken it by re-running init: a re-run that changes the test command or allows new MCP servers is refused unless you run it yourself, in your own terminal, with `--human` (SPEC I1d); the hook blocks the agent from passing that flag. On Windows without `python3`/`python` on PATH, the skills fall back to `py -3`.
+
+`evals/edge.yaml` covers edge cases: a user with only an idea and no app, no tests, unsure or free-text answers;
+prompt injection planted in README, CLAUDE.md, AGENTS.md, code comments, file names, compose files and `.mcp.json`;
+forged answer files, hostile test commands and attempts to switch guardrails off. It checks that detected facts
+match a clean twin repo, that no file contents reach what the agent reads, and that the skills carry the
+data-not-instructions text. Whether a live agent actually follows that text is not measured: `evals/live_edge.yaml`
+is a design for that suite, not run, because it spends credits (E4).
 
 ## Develop
 

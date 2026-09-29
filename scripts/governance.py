@@ -13,6 +13,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from intake import validate  # noqa: E402
+from pyfind import default_python  # noqa: E402
 from packs import PackError  # noqa: E402
 from select_pack import select  # noqa: E402
 from tier import compute_tier, load_tiers  # noqa: E402
@@ -28,7 +29,7 @@ def effective_tier(computed, exceptions):
     return min([computed] + lowered)
 
 
-def build(intake, exceptions=(), mcp_allow=(), hook_python=None):
+def build(intake, exceptions=(), mcp_allow=(), hook_python=None, corrections=()):
     """Assemble the governance dict from intake + tier + packs + exceptions (R1)."""
     validate(intake)
     exceptions = list(exceptions)
@@ -44,15 +45,16 @@ def build(intake, exceptions=(), mcp_allow=(), hook_python=None):
                           "pins": [{"id": pid, "sha256": h} for pid, h in s["pins"]]}
                   for agent, s in sel.items()},
         "mcp_allow": sorted(set(mcp_allow)),
-        "hook_python": hook_python or ("python" if os.name == "nt" else "python3"),
+        "hook_python": hook_python or default_python(),
         "exceptions": exceptions,
+        "corrections": list(corrections),
     }
 
 
 def read(repo):
     """Load <repo>/governance.yaml, or None."""
     p = Path(repo) / FILENAME
-    return yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else None
+    return yaml.safe_load(p.read_text(encoding="utf-8-sig")) if p.exists() else None
 
 
 def write(repo, gov):
@@ -73,9 +75,15 @@ def main(argv=None):
     mcp = args.mcp_allow.split(",") if args.mcp_allow is not None else old.get("mcp_allow", [])
     try:
         gov = build(intake, old.get("exceptions", []), [m.strip() for m in mcp if m.strip()],
-                    old.get("hook_python"))
+                    old.get("hook_python"), old.get("corrections", []))
     except (PackError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
+        return 4
+    if old and gov["tier"]["computed"] < old["tier"]["computed"] and not any(
+            e.get("kind") == "tier" and e["tier"] <= gov["tier"]["computed"] for e in old.get("exceptions", [])):
+        print(f"refused: this intake lowers the computed tier from {old['tier']['computed']} to "
+              f"{gov['tier']['computed']}; record an exception with scripts/exceptions.py first (T6, X4)",
+              file=sys.stderr)
         return 4
     write(args.repo, gov)
     print(f"governance.yaml written: tier {gov['tier']['effective']} "

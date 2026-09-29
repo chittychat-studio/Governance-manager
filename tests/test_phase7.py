@@ -28,9 +28,9 @@ def test_codex_is_advisory_only_in_coverage_and_report(tmp_path):
     """R6: per-agent coverage is honest: Codex gets instructions only."""
     repo = install(tmp_path / "r", BOTH)
     cov = (repo / render.COVERAGE_MD).read_text()
-    assert "## codex" in cov and "Enforced: 0 · Advisory: 12 · Disabled: 0" in cov
+    assert "## codex" in cov and "Enforced: 0 · Advisory: 13 · Disabled: 0" in cov
     text = report.build(repo, verify_path=tmp_path / "none")
-    assert "| codex | 0 | 12 | 0 |" in text and "| claude-code | 15 | 2 | 0 |" in text
+    assert "| codex | 0 | 13 | 0 |" in text and "| claude-code | 16 | 2 | 0 |" in text
 
 
 def test_user_agents_md_kept_and_block_replaced(tmp_path):
@@ -81,10 +81,15 @@ def test_init_questions_then_install(tmp_path):
     assert (repo / ".github/workflows/governor.yml").exists() and (repo / ".governor/scripts/init.py").exists()
 
 
-def test_init_refuses_answers_for_unasked_fields(tmp_path):
-    """I3: detected facts are not overridden through the answers file."""
-    code, lines = init.install(fixture_copy(tmp_path), {"tenancy": "single", "stack": "django"})
-    assert code == 3 and "not asked" in lines[0]
+def test_init_refuses_risk_lowering_correction(tmp_path):
+    """I3a/T6: a detected fact may be corrected upward, never downward without an exception."""
+    code, lines = init.install(fixture_copy(tmp_path), {"tenancy": "single", "exposure": "internal"})
+    assert code == 4 and "lower the tier" in lines[0]
+
+
+def test_init_refuses_unknown_field(tmp_path):
+    code, lines = init.install(fixture_copy(tmp_path), {"tenancy": "single", "colour": "blue"})
+    assert code == 3 and "unknown field" in lines[0]
 
 
 def test_init_refuses_missing_required(tmp_path):
