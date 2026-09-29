@@ -170,9 +170,12 @@ def detect(repo_dir):
 
     # agent
     agents = []
-    if (repo / "CLAUDE.md").exists() or (repo / ".claude").is_dir():
+    claude_markers = ["CLAUDE.md", ".claude/CLAUDE.md", ".claude/settings.json", ".claude/settings.local.json",
+                      ".claude/rules", ".claude/skills", ".claude/commands", ".claude/agents"]
+    found = [m for m in claude_markers if (repo / m).exists()]
+    if found:
         agents.append("claude-code")
-        evidence.setdefault("agent", []).append("CLAUDE.md or .claude/ present")
+        evidence.setdefault("agent", []).append(f"Claude Code config present: {found[0]}")
     if (repo / "AGENTS.md").exists() or (repo / ".codex").is_dir():
         agents.append("codex")
         evidence.setdefault("agent", []).append("AGENTS.md or .codex/ present")

@@ -1,0 +1,12 @@
+{
+  "name": "chittychat-governor",
+  "description": "Private marketplace for the Governor plugin.",
+  "owner": {"name": "chittychat-studio"},
+  "plugins": [
+    {
+      "name": "governor",
+      "source": "./",
+      "description": "Enforced, drift-checked agent governance for a repo."
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+# Codex pack, tier 1 (SPEC P1, E7). Same rules as the Claude Code pack, filtered to agents: [codex].
+# Codex output is AGENTS.md only, so every rule renders as advisory for Codex (R6).
+id: tier1/fastapi-postgres/codex
+version: 1
+tier: 1
+stack: fastapi-postgres
+agent: codex
+extends: tier1/fastapi-postgres/claude-code
+rules: []

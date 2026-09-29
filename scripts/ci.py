@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import governance  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-RUNTIME_SCRIPTS = ["intake.py", "detect.py", "ask.py", "tier.py", "packs.py", "select_pack.py", "sign_pack.py",
+RUNTIME_SCRIPTS = ["init.py", "ci.py", "intake.py", "detect.py", "ask.py", "tier.py", "packs.py", "select_pack.py", "sign_pack.py",
                    "governance.py", "render.py", "lint.py", "exceptions.py", "drift.py", "doctor.py", "report.py"]
 WORKFLOW = ".github/workflows/governor.yml"
 

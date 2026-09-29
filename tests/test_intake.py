@@ -137,3 +137,9 @@ def test_scripts_make_no_network_imports():
     for name in ("detect.py", "ask.py", "intake.py"):
         src = (ROOT / "scripts" / name).read_text()
         assert not re.search(r"^\s*(import|from)\s+(urllib|http|socket|requests|httpx|ssl)\b", src, re.M), name
+
+
+def test_bare_governor_dir_is_not_agent_evidence(tmp_path):
+    """Writing answers under .claude/governor/ must not change what detect reports (I3)."""
+    (tmp_path / ".claude" / "governor").mkdir(parents=True)
+    assert "agent" not in detect.detect(tmp_path)["detected"]

@@ -14,7 +14,7 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 - **E4a** Cost estimate = number of scripted tasks × per-task token budget (a constant in the script) × the price in `docs/pricing.yaml`, which records its source URL and check date. An estimate from a price older than 90 days is printed with a warning.
 - **E5** (Applies only once compose exists — see NX4.) Compose output is cached on `sha256(governance.yaml + pack versions + template version)`. Cache hit = no subagent call.
 - **E6** All generated config is project-scoped and committed: `.claude/settings.json`, `.claude/hooks/`, `.claude/rules/`, `CLAUDE.md`. Never write to `~/.claude/`. Reason: Claude Code cloud sessions do not read the user's local `~/.claude/settings.json`, so only project-scoped config travels to both local and cloud sessions. [L — re-verify each release]
-- **E7** Codex target in v1 = `AGENTS.md` + a project-scoped Codex config file only. No Codex-hosted inference path. [G — confirm Codex reads a project-level config file; if it only reads `~/.codex/`, ship `AGENTS.md` only (E6 forbids writing to the user's home)]
+- **E7** Codex target in v1 = `AGENTS.md` only, as a marked block that leaves the user's own text intact. Every rule is advisory for Codex and the coverage table says so. No Codex config file until Codex's project-level config is confirmed [G]. No Codex-hosted inference path.
 
 ## I — Intake
 
