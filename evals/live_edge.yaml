@@ -1,7 +1,7 @@
-# Live edge suite: DESIGN ONLY. Not run, and no runner exists yet.
+# Live edge suite, run by scripts/live_edge.py (SPEC E4, amended 2026-09-29 with approval).
 # These scenarios need a real headless Claude Code session with the plugin loaded, so they spend credits or plan
-# usage. SPEC E4 lists only development sessions, Q-series verify and C1 as credit spends, so running them first
-# needs (1) an E4 amendment adding this suite and (2) the maintainer's approval of the estimate below.
+# usage. Run locally (decisions log: verify-style runs are local); the cloud session's safety check blocks it.
+# Not yet run: no results exist until someone runs `python scripts/live_edge.py`.
 #
 # Each scenario: repo = base from evals/edge.yaml, Governor state before the prompt, the prompt, and pass checks
 # that are read from files and the hook log afterwards, never from the model's own summary (Q5).

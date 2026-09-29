@@ -141,10 +141,10 @@ def test_claude_plugin_validate(target):
 
 
 def test_no_script_calls_network_or_models_except_verify():
-    """E2, D4: only verify.py (E4, cost-gated) may start a model session."""
+    """E2, D4: only the E4 cost-gated runners (verify.py, live_edge.py) may start a model session."""
     for p in sorted((ROOT / "scripts").glob("*.py")):
         src = p.read_text()
         assert not re.search(r"^\s*(import|from)\s+(urllib|http|socket|requests|httpx|ssl|anthropic|openai)\b",
                              src, re.M), p.name
-        if p.name != "verify.py":
+        if p.name not in ("verify.py", "live_edge.py"):
             assert not re.search(r"""["']claude["']""", src), p.name
