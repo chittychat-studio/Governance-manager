@@ -1,0 +1,7 @@
+{
+  "name": "billing-api",
+  "private": true,
+  "scripts": {"start": "node src/server.js", "test": "jest"},
+  "dependencies": {"express": "^4.19.0", "stripe": "^16.0.0", "pg": "^8.12.0", "jsonwebtoken": "^9.0.0"},
+  "devDependencies": {"jest": "^29.7.0"}
+}
