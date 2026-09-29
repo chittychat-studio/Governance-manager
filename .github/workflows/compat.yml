@@ -33,7 +33,11 @@ jobs:
           echo "n=$n" >> "$GITHUB_OUTPUT"
       - name: Budget gate (E4)
         id: cap
-        run: echo "usd=$(python scripts/c1_budget.py --runs-this-month '${{ steps.ledger.outputs.n }}')" >> "$GITHUB_OUTPUT"
+        shell: bash
+        run: |
+          # Assignment on its own line so a refusal fails this step (bash -e) instead of passing an empty cap.
+          usd=$(python scripts/c1_budget.py --runs-this-month '${{ steps.ledger.outputs.n }}')
+          echo "usd=$usd" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

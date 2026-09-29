@@ -8,6 +8,7 @@ Usage: python scripts/render.py <repo>
 """
 import json
 import os
+import re
 import shutil
 import stat
 import sys
@@ -33,7 +34,7 @@ COVERAGE_MD = ".claude/governor/COVERAGE.md"
 BACKUP = ".claude/settings.json.governor-backup"
 SECTIONS = ["## Enforced rules", "## Advisory rules", "## Disabled rules", "## Commands"]
 HOOK_EVENTS = {
-    "PreToolUse": ("Bash|PowerShell|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob|mcp__.*",
+    "PreToolUse": ("^(Bash|PowerShell|Monitor|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob)$|^mcp__.*",
                    "governor_pretool.py", 30),
     "PostToolUse": ("Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit", "governor_posttool.py", 30),
     "PostToolUseFailure": ("Bash|PowerShell", "governor_posttool.py", 30),
@@ -43,6 +44,9 @@ HOOK_EVENTS = {
 
 class RenderError(ValueError):
     """Refuse to render (P4 pin mismatch, unreadable settings)."""
+
+
+CANNOT_FAIL = re.compile(r"(?i)^(true|:|exit\s+0|echo\b[^;&|]*|rem\b.*|#.*)$|(\|\||;)\s*(true|:|exit\s+0)\s*$")
 
 
 def no_tests(gov):
@@ -59,6 +63,9 @@ def test_cmd_problem(gov):
         return None
     if "\n" in cmd or "\r" in cmd:
         return "refused: test command contains a line break (I1b)"
+    if CANNOT_FAIL.search(cmd.strip()):
+        return (f"refused: test command `{cmd[:80]}` cannot fail, so the Stop-hook test gate would always pass "
+                "(I1b). Give the command that runs the tests, or `none` if there are none yet (I1c).")
     sys.path.insert(0, str(TEMPLATES))
     spec = importlib.util.spec_from_file_location("governor_pretool_check", TEMPLATES / "governor_pretool.py")
     mod = importlib.util.module_from_spec(spec)

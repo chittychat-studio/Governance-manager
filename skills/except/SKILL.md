@@ -3,7 +3,7 @@ description: Record a Governor exception (disable one rule, or lower the tier) w
 argument-hint: "--rule <RULE-ID> | --tier <N>  --reason \"at least 20 characters\""
 disable-model-invocation: true
 ---
-Python command: run `python3 --version`; if it fails or opens the Microsoft Store (common on Windows), use `python` instead everywhere below.
+Python command: run `python3 --version`; if it fails or opens the Microsoft Store (common on Windows), use `python`; if that also fails, use `py -3`. Use the one that works everywhere below.
 
 The user wants an exception: $ARGUMENTS
 

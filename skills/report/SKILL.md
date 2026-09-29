@@ -2,7 +2,7 @@
 description: Write Governor's one-page evidence report for this repo (tier, enforced vs advisory counts, exceptions, lint, drift, last verify status).
 disable-model-invocation: true
 ---
-Python command: run `python3 --version`; if it fails or opens the Microsoft Store (common on Windows), use `python` instead everywhere below.
+Python command: run `python3 --version`; if it fails or opens the Microsoft Store (common on Windows), use `python`; if that also fails, use `py -3`. Use the one that works everywhere below.
 
 Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/report.py" . --out governor-report.md` and show the file.
 

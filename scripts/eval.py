@@ -79,7 +79,7 @@ def _install_tier(work, tier):
 
 def _event(case, repo):
     tool = case["tool"]
-    if tool in ("Bash", "PowerShell"):
+    if tool in ("Bash", "PowerShell", "Monitor"):
         ti = {"command": case["cmd"]}
     elif tool in ("Read", "Write", "Edit"):
         p = case["path"]
@@ -487,7 +487,7 @@ def scorecard(res, gate_rows):
         lines.append(f"| {g['gate']} | {flat[g['gate']]} | {g['target']} | {'PASS' if g['pass'] else '**FAIL**'} |")
     e = res["enforcement"]
     lines += ["", "## Enforcement", "", f"{m['enforcement']['cases']} cases fired at the rendered hooks "
-              f"(tiers 1-3, Bash and PowerShell tools). Documented gaps stopped anyway: {m['enforcement']['gaps_stopped']}.",
+              f"(tiers 1-3, Bash, PowerShell and Monitor tools). Documented gaps stopped anyway: {m['enforcement']['gaps_stopped']}.",
               "", "| Rule | Attacks stopped |", "|---|---|"]
     lines += [f"| {k} | {v} |" for k, v in e["by_rule"].items()]
     lines += ["", "## Edge cases", "", "Novice users, prompt injection in repo text, jailbreak attempts and skill text. "

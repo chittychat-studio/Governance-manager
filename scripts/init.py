@@ -1,4 +1,4 @@
-"""One-shot install: detect -> ask -> governance -> render -> lint [-> CI] (SPEC I1-I5, I3a, L1a, R1-R6, V7, D3, T6).
+"""One-shot install: detect -> ask -> governance -> render -> lint [-> CI] (SPEC I1-I5, I1d, I3a, L1a, R1-R6, V7, D3, T6).
 
 Two steps so the questions come from the fixed bank and the answers from the user (I5a, L1):
   python scripts/init.py <repo> --questions [--host claude-code]     # detected facts + questions, as JSON
@@ -58,7 +58,7 @@ def mcp_servers(repo):
     return sorted(servers) if isinstance(servers, dict) else []
 
 
-def install(repo, answers, mcp_allow=None, with_ci=False, host=None):
+def install(repo, answers, mcp_allow=None, with_ci=False, host=None, human=False):
     """Run the pipeline. Returns (exit_code, lines). Nothing is written unless every check passes."""
     repo = Path(repo)
     unknown_fields = sorted(set(answers) - set(REQUIRED) - set(OPTIONAL))
@@ -82,6 +82,19 @@ def install(repo, answers, mcp_allow=None, with_ci=False, host=None):
                                old.get("hook_python"), corrections)
     except (IntakeError, PackError) as exc:
         return 4, [str(exc)]
+    problem = render.test_cmd_problem(gov)   # before I1d, so a --human re-run is never sent to a dead end (I1b)
+    if problem:
+        return 4, [problem]
+    if old and not human:
+        weaker = []
+        if gov["intake"]["test_cmd"] != old["intake"]["test_cmd"]:
+            weaker.append(f"test command {old['intake']['test_cmd']!r} -> {gov['intake']['test_cmd']!r}")
+        added = sorted(set(gov["mcp_allow"]) - set(old.get("mcp_allow", [])))
+        if added:
+            weaker.append(f"MCP servers allowed: {', '.join(detect.safe_name(a) for a in added)}")
+        if weaker:
+            return 4, [f"refused: this re-run changes {'; '.join(weaker)}. Only the user can make that change: run "
+                       "the same init command in your own terminal, outside Claude Code, with --human added (I1d)."]
     if old and gov["tier"]["computed"] < old["tier"]["computed"]:
         covered = any(e.get("kind") == "tier" and e["tier"] <= gov["tier"]["computed"] for e in exceptions)
         if not covered:
@@ -126,6 +139,8 @@ def main(argv=None):
     ap.add_argument("--host", choices=["claude-code", "codex"], help="agent running Governor; always included")
     ap.add_argument("--mcp-allow")
     ap.add_argument("--with-ci", action="store_true")
+    ap.add_argument("--human", action="store_true",
+                    help="the user runs this in their own terminal: allow test_cmd and mcp_allow changes (I1d)")
     args = ap.parse_args(argv)
     if args.questions:
         print(json.dumps(questions(args.repo, args.host), indent=2))
@@ -139,7 +154,7 @@ def main(argv=None):
         print("refused: answers file must be a JSON object", file=sys.stderr)
         return 3
     mcp = [m.strip() for m in args.mcp_allow.split(",") if m.strip()] if args.mcp_allow is not None else None
-    code, lines = install(args.repo, answers, mcp, args.with_ci, args.host)
+    code, lines = install(args.repo, answers, mcp, args.with_ci, args.host, args.human)
     print("\n".join(lines))
     return code
 

@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-SHELL_TOOLS = {"Bash", "PowerShell"}
+SHELL_TOOLS = {"Bash", "PowerShell", "Monitor"}   # Monitor runs a shell command too (P9)
 # Wrappers that run the rest of the line as a command, with the flags that take a separate argument.
 WRAPPERS = {
     "sudo": {"-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T", "--user", "--group"},
@@ -378,6 +378,7 @@ GUARD_TARGETS = [".claude/settings.json", ".claude/settings.local.json", ".claud
 GUARD_DIRS = [".claude/hooks/", ".claude/governor/state/"]
 GUARD_BASENAMES = ["governance.yaml", ".governor-managed.json", "governor_config.json", "governor_*.py"]
 GOVERNOR_ADMIN_SCRIPTS = {"exceptions.py", "governance.py"}   # human-only (X1); init/render cannot lower a tier
+GOVERNOR_SCRIPTS = {"init.py", "render.py", "ask.py", "ci.py"}   # --human on these is human-only (I1d)
 READ_ONLY = {"cat", "less", "more", "head", "tail", "grep", "egrep", "fgrep", "rg", "ls", "dir", "wc", "diff", "stat",
              "file", "type", "jq", "bat", "get-content", "gc", "select-string", "sls", "test", "[", "realpath",
              "readlink", "sha256sum", "md5sum", "shasum", "get-filehash", "get-item", "gi", "get-childitem", "gci",
@@ -467,6 +468,9 @@ def guard_hit(cmd, tool="Bash"):
                 cwd = new if ".claude" in new.lower() else ""
                 continue
             if any(os.path.basename(t.replace("\\", "/")) in GOVERNOR_ADMIN_SCRIPTS for t in toks):
+                return True
+            if any(t.lower().split("=", 1)[0] == "--human" for t in toks) and \
+                    any(os.path.basename(t.replace("\\", "/")) in GOVERNOR_SCRIPTS for t in toks):
                 return True
             # redirections write whatever the program
             for i, t in enumerate(toks):

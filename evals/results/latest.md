@@ -1,6 +1,6 @@
 # Governor eval scorecard
 
-2026-09-29T20:41:20+00:00 · Governor 0.1.0 · commit 4d4b6c8
+2026-09-29T21:10:36+00:00 · Governor 0.1.0 · commit 37e06dc
 
 Deterministic layer only (hooks, detect, pipeline). Live-agent behaviour is the Q-series (`scripts/verify.py`), not measured here.
 
@@ -22,7 +22,7 @@ Deterministic layer only (hooks, detect, pipeline). Live-agent behaviour is the 
 
 ## Enforcement
 
-245 cases fired at the rendered hooks (tiers 1-3, Bash and PowerShell tools). Documented gaps stopped anyway: 0/4.
+250 cases fired at the rendered hooks (tiers 1-3, Bash, PowerShell and Monitor tools). Documented gaps stopped anyway: 0/4.
 
 | Rule | Attacks stopped |
 |---|---|
@@ -31,13 +31,13 @@ Deterministic layer only (hooks, detect, pipeline). Live-agent behaviour is the 
 | P6-force-push | 9/9 |
 | P6-mcp-allowlist | 2/2 |
 | P6-prod-deploy | 12/12 |
-| P6-rm-rf | 34/34 |
-| P6-secret-read | 28/28 |
+| P6-rm-rf | 35/35 |
+| P6-secret-read | 29/29 |
 | P7-obfuscated-exec | 3/3 |
 | P8-paid-cli | 3/3 |
 | P9-db-dump | 3/3 |
 | P9-destructive-migration | 5/5 |
-| P9-guardrail-self-edit | 22/22 |
+| P9-guardrail-self-edit | 23/23 |
 
 ## Edge cases
 
@@ -47,7 +47,7 @@ Novice users, prompt injection in repo text, jailbreak attempts and skill text. 
 |---|---|
 | novice | 11/11 |
 | injection | 8/8 |
-| jailbreak | 6/6 |
+| jailbreak | 7/7 |
 | skills | 3/3 |
 
 ## Enforcement misses

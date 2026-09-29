@@ -65,6 +65,8 @@ init, secret-scan lines, multi-step pipeline scenarios) and fails if any gate in
 The latest scorecard is `evals/results/latest.md`; CI runs it on every PR. It does not measure live-agent
 behaviour; that is the cost-gated Q-series (`scripts/verify.py`).
 
+Once Governor is installed, the agent cannot weaken it by re-running init: a re-run that changes the test command or allows new MCP servers is refused unless you run it yourself, in your own terminal, with `--human` (SPEC I1d); the hook blocks the agent from passing that flag. On Windows without `python3`/`python` on PATH, the skills fall back to `py -3`.
+
 `evals/edge.yaml` covers edge cases: a user with only an idea and no app, no tests, unsure or free-text answers;
 prompt injection planted in README, CLAUDE.md, AGENTS.md, code comments, file names, compose files and `.mcp.json`;
 forged answer files, hostile test commands and attempts to switch guardrails off. It checks that detected facts

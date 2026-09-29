@@ -1,7 +1,7 @@
 ---
 description: Check whether this repo has drifted from its installed Governor setup (new data classes, exposure or tenancy change, tier increase, stale files).
 ---
-Python command: run `python3 --version`; if it fails or opens the Microsoft Store (common on Windows), use `python` instead everywhere below.
+Python command: run `python3 --version`; if it fails or opens the Microsoft Store (common on Windows), use `python`; if that also fails, use `py -3`. Use the one that works everywhere below.
 
 Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/drift.py" .` and report each DRIFT and warning line as printed.
 

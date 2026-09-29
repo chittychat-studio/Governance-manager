@@ -213,3 +213,55 @@ def test_old_python_gets_a_clear_message():
     code = ("import sys; sys.version_info = (3, 10, 0, 'final', 0); sys.path.insert(0, 'scripts'); import intake")
     r = subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True)
     assert r.returncode == 1 and "needs Python 3.11" in r.stderr and "Traceback" not in r.stderr
+
+
+# ---- install-path re-review (round 3): N1 init.py self-weakening, N3 Monitor, unfailable test_cmd (I1b, I1d, P9)
+def _installed(tmp_path):
+    r = repo_with(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    code, lines = init.install(r, {"exposure": "public", "tenancy": "single"}, host="claude-code")
+    assert code == 0, lines
+    return r
+
+
+def _pretool(r, event):
+    return subprocess.run([sys.executable, str(r / ".claude/hooks/governor_pretool.py")], input=json.dumps(event),
+                          capture_output=True, text=True, env={**__import__("os").environ, "CLAUDE_PROJECT_DIR": str(r)})
+
+
+def test_rerun_cannot_widen_mcp_or_change_test_cmd_without_human(tmp_path):
+    r = _installed(tmp_path)
+    code, lines = init.install(r, {"exposure": "public", "tenancy": "single"}, ["evil"], host="claude-code")
+    assert code == 4 and "I1d" in lines[0] and "evil" in lines[0]
+    code, lines = init.install(r, {"exposure": "public", "tenancy": "single", "test_cmd": "python -m pytest -k none"},
+                               host="claude-code")
+    assert code == 4 and "I1d" in lines[0]
+    assert governance.read(r)["mcp_allow"] == []
+    code, lines = init.install(r, {"exposure": "public", "tenancy": "single"}, ["github"], host="claude-code",
+                               human=True)
+    assert code == 0 and governance.read(r)["mcp_allow"] == ["github"]
+
+
+def test_agent_cannot_pass_human_flag(tmp_path):
+    r = _installed(tmp_path)
+    for cmd in ("python3 /p/scripts/init.py . --answers a.json --human", "py -3 init.py . --human --mcp-allow x",
+                "python render.py . --HUMAN"):
+        res = _pretool(r, {"tool_name": "Bash", "cwd": str(r), "tool_input": {"command": cmd}})
+        assert res.returncode == 2 and "P9-guardrail-self-edit" in res.stderr, cmd
+    ok = _pretool(r, {"tool_name": "Bash", "cwd": str(r), "tool_input": {"command": "python3 /p/scripts/init.py . --questions"}})
+    assert ok.returncode == 0
+
+
+def test_monitor_tool_gets_shell_checks(tmp_path):
+    r = _installed(tmp_path)
+    res = _pretool(r, {"tool_name": "Monitor", "cwd": str(r), "tool_input": {"command": "tail -f .env"}})
+    assert res.returncode == 2 and "P6-secret-read" in res.stderr
+    matcher = json.loads((r / ".claude/settings.json").read_text())["hooks"]["PreToolUse"][0]["matcher"]
+    import re
+    assert re.search(matcher, "Monitor") and not re.search(matcher, "TodoWrite") and re.search(matcher, "mcp__x__y")
+
+
+@pytest.mark.parametrize("cmd", ["true", ":", "exit 0", "echo ok", "python -m pytest || true", "pytest; true"])
+def test_test_cmd_that_cannot_fail_refused(tmp_path, cmd):
+    r = repo_with(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    code, lines = init.install(r, {"exposure": "public", "tenancy": "single", "test_cmd": cmd}, host="claude-code")
+    assert code == 4 and "cannot fail" in lines[0], (cmd, lines)

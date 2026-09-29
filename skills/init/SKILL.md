@@ -4,7 +4,7 @@ argument-hint: "[--with-ci] [--mcp-allow server1,server2]"
 disable-model-invocation: true
 ---
 <!-- Plugin docs: https://code.claude.com/docs/en/plugins-reference and https://code.claude.com/docs/en/skills -->
-Python command: run `python3 --version`; if it fails or opens the Microsoft Store (common on Windows), use `python` instead everywhere below.
+Python command: run `python3 --version`; if it fails or opens the Microsoft Store (common on Windows), use `python`; if that also fails, use `py -3`. Use the one that works everywhere below.
 
 Install Governor in the current repository. Follow these steps exactly.
 
@@ -37,5 +37,7 @@ words and do not assume security knowledge.
    and the status line. The status is "linted" at best. Never say the setup is verified; the Q-series verify is a
    separate, local, paid run.
 7. If it refused, show the reason (it names the field, file or pack) and stop. Do not work around a refusal.
+   If the reason asks for `--human`, give the user the exact command to run in their own terminal; never add
+   `--human` yourself (Governor blocks it).
 8. Tell the user to review `git diff` (especially `.claude/settings.json`), commit, and restart Claude Code so
    the new hooks load.
