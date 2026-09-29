@@ -1,6 +1,8 @@
 # Phase 0 — Kickoff review
 
-Date: 2026-09-29. Read-only review. No code written. SPEC.md is **not** modified; proposed edits are in `phase0-spec.patch` (apply with `git apply docs/review/phase0-spec.patch`).
+Date: 2026-09-29. Read-only review. No code written.
+
+**Status: applied.** `phase0-spec.patch` is now in SPEC.md (v0.3), together with the section 3 fixes (E4a, I5a, V4, D1, EV1a, EV2) and matching updates to BUILD_PLAN.md, PROMPTS.md, CLAUDE.md and `.claude/settings.json` (`pip install` moved to ask). The patch file is kept as a record of the first round of edits.
 
 Doc checks are against code.claude.com as fetched on 2026-09-29. Where a claim is marked "unconfirmed", the docs page I read did not state it either way.
 
