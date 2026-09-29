@@ -6,7 +6,7 @@ Order is fixed. Do not start a phase until the previous one's exit check passes.
 |---|---|---|---|
 | 0 | SPEC.md + CLAUDE.md (done) | all | Rules reviewed by Sandhya |
 | 1 | `intake.schema.json`, `detect.py`, `ask.py` | I1–I5, I1a, I5a | Detect fills ≥ 4 required fields on 3 synthetic fixtures (cloud); then on DeckForge, JobPilot, market-api run locally |
-| 2 | `tiers.yaml`, tier-3 fastapi-postgres claude-code pack, `select.py`, pack hash pinning | T0–T6, P1–P8 (P4 hash pin; P4a signing deferred) | Every pack rule ID exists in SPEC; tier table matches your judgement on 3 repos |
+| 2 | `tiers.yaml`, tier-3 fastapi-postgres claude-code pack, `select_pack.py`, pack hash pinning | T0–T6, P1–P8 (P4 hash pin; P4a signing deferred) | Every pack rule ID exists in SPEC; tier table matches your judgement on 3 repos |
 | 3 | `governance.yaml`, renderers, `lint.py`, `exceptions.py` | R1–R6, V1–V7, X1–X4 | Rendered output passes lint; installs into fixture without clobbering existing settings |
 | 4 | Fixture app, `verify.py` (headless) | Q1–Q5 | 4/4 tasks pass twice in a row — built in cloud, **run locally**, approval first |
 | 5 | `/governor doctor`, GitHub Action, drift | DR1, D1–D4, D2a | Doctor flags gaps on an old repo; Action fails a PR that adds a data class |

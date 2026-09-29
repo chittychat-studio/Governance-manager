@@ -1,0 +1,98 @@
+# Base pack (SPEC P6, P7, P8). Hand-written; selection is pure lookup (P1).
+id: tier1/fastapi-postgres/claude-code
+version: 1
+tier: 1
+stack: fastapi-postgres
+agent: claude-code
+extends: null
+rules:
+  - id: P6-secret-read
+    spec: P6
+    text: Do not read secret files (.env*, private keys, cloud credentials).
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    deny:
+      - Read(./.env)
+      - Read(./.env.*)
+      - Read(./**/*.pem)
+      - Read(./**/*.key)
+      - Read(./**/id_rsa*)
+      - Read(./**/id_ed25519*)
+      - Read(~/.aws/**)
+      - Read(~/.config/gcloud/**)
+      - Read(~/.azure/**)
+      - Read(~/.kube/config)
+      - Read(~/.docker/config.json)
+    hook:
+      path_deny: ['.env', '.env.*', '*.pem', '*.key', 'id_rsa*', 'id_ed25519*', '~/.aws/*', '~/.config/gcloud/*', '~/.azure/*', '~/.kube/config', '~/.docker/config.json']
+      path_allow: ['.env.example', '.env.sample', '.env.template']
+      bash_deny: ['(?<![\w.-])\.env(?!\.example|\.sample|\.template)(\.[\w-]+)?(?![\w.-])', '\.aws/credentials', '(?<![\w.-])id_(rsa|ed25519)(?![\w.-]*\.pub)']
+  - id: P6-mcp-allowlist
+    spec: P6
+    text: Only MCP servers listed in governance.yaml (mcp_allow) may be used; all others are blocked.
+    enforcement: enforced
+    mechanism: [hook]
+    agents: [claude-code]
+    hook:
+      mcp_allowlist: true
+  - id: P6-rm-rf
+    spec: P6
+    text: Recursive force delete is blocked.
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    deny: ['Bash(rm -rf *)', 'Bash(rm -fr *)', 'Bash(rm -r -f *)', 'Bash(rm --recursive --force *)']
+    hook:
+      bash_deny: ['^rm\s+(?=.*(-[a-zA-Z]*r|--recursive))(?=.*(-[a-zA-Z]*f|--force))']
+  - id: P6-force-push
+    spec: P6
+    text: Force push is blocked.
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    deny: ['Bash(git push --force *)', 'Bash(git push -f *)', 'Bash(git push --force-with-lease *)']
+    hook:
+      bash_deny: ['^git\b.*\bpush\b.*(\s--force(-with-lease)?\b|\s-[a-zA-Z]*f\b|\s\+\S+)']
+  - id: P6-prod-deploy
+    spec: P6
+    text: Production deploy and infrastructure apply commands need human approval.
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    ask: ['Bash(fly deploy *)', 'Bash(flyctl deploy *)', 'Bash(terraform apply *)', 'Bash(kubectl apply *)', 'Bash(heroku *)', 'Bash(docker push *)', 'Bash(make deploy *)', 'Bash(./deploy.sh *)']
+    hook:
+      bash_ask: ['^(fly|flyctl)\s+deploy\b', '^terraform\s+(apply|destroy)\b', '^kubectl\s+(apply|delete)\b', '^heroku\b', '^docker\s+push\b', '^make\s+deploy', '(^|/)deploy(\.sh)?(\s|$)', '^(npm|pnpm|yarn)\s+run\s+deploy', '^vercel\b.*--prod']
+  - id: P6-secret-scan
+    spec: P6
+    text: Every Edit/Write is scanned for secrets; a hit is reported back and logged.
+    enforcement: enforced
+    mechanism: [hook]
+    agents: [claude-code]
+    hook:
+      secret_scan: true
+  - id: P6-stop-tests
+    spec: P6
+    text: The session cannot finish while test_cmd fails.
+    enforcement: enforced
+    mechanism: [hook]
+    agents: [claude-code]
+    hook:
+      stop_tests: true
+  - id: P8-repeat-fail
+    spec: P8
+    text: The same failing command is blocked after 3 failures in a session.
+    enforcement: enforced
+    mechanism: [hook]
+    agents: [claude-code]
+    hook:
+      repeat_fail: 3
+  - id: P8-paid-cli
+    spec: P8
+    text: Commands that call paid AI APIs need human approval.
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    ask: ['Bash(claude *)', 'Bash(openai *)', 'Bash(replicate *)']
+    hook:
+      bash_ask: ['^claude\b', '^openai\b', '^replicate\b', '^aws\s+bedrock', '^gcloud\s+ai\b']

@@ -1,0 +1,38 @@
+# Tier 3 = tier 2 + P10 (SPEC P3, P10).
+id: tier3/fastapi-postgres/claude-code
+version: 1
+tier: 3
+stack: fastapi-postgres
+agent: claude-code
+extends: tier2/fastapi-postgres/claude-code
+rules:
+  - id: P10-dependency-add
+    spec: P10
+    text: Adding or installing dependencies needs human approval.
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    ask: ['Bash(pip install *)', 'Bash(poetry add *)', 'Bash(uv add *)', 'Bash(uv pip install *)', 'Bash(npm install *)', 'Bash(pnpm add *)', 'Bash(yarn add *)']
+    hook:
+      bash_ask: ['^(python\d?\s+-m\s+)?pip\d?\s+install\b', '^(poetry|uv)\s+add\b', '^uv\s+pip\s+install\b', '^(npm|pnpm)\s+(install|i|add)\b', '^yarn\s+add\b']
+  - id: P10-webfetch-ask
+    spec: P10
+    text: Web fetches need human approval.
+    enforcement: enforced
+    mechanism: [deny_rule]
+    agents: [claude-code]
+    ask: ['WebFetch']
+  - id: P10-env-dump
+    spec: P10
+    text: Dumping the environment (env, printenv) needs human approval.
+    enforcement: enforced
+    mechanism: [hook]
+    agents: [claude-code, codex]
+    hook:
+      bash_ask: ['^(env|printenv)\s*$', '^(env|printenv)\s*\|']
+  - id: P10-synthetic-fixtures
+    spec: P10
+    text: Fixtures use provider test tokens and synthetic records only; never real card, health or personal records.
+    enforcement: advisory
+    mechanism: [instruction]
+    agents: [claude-code, codex]

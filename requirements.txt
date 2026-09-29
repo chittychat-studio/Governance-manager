@@ -1,0 +1,2 @@
+# Runtime deps for scripts/ (not hooks: hooks are stdlib-only, P5).
+pyyaml>=6

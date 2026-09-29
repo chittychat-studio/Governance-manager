@@ -52,6 +52,9 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
   - Stop hook that runs `test_cmd` and blocks "done" if red, with a loop guard so it cannot block indefinitely [G — confirm the guard mechanism in the hooks docs in Phase 3]
 - **P7** Every P6 deny item is layered: permission deny rule **and** PreToolUse hook. Reason: Bash rules match command text only (`/bin/rm`, `bash -c '…'`, `git -C . push` are not matched), and a hook exiting 2 blocks before permission rules are evaluated. Neither is an OS boundary; the evidence report must not claim one. [C — code.claude.com/docs/en/permissions, "What a Bash rule doesn't match"]
 - **P8** Cost pack: same failing command 3 times in a session → block (N is a pack field, default 3); commands matching the pack's `paid_cli` list → ask.
+- **P9** Tier-2 additions (added in Phase 2, pending Sandhya's review): the agent cannot edit its own guardrails (`.claude/settings.json`, `.claude/hooks/`, `governance.yaml`) → deny; database dump commands → ask; destructive migrations (`DROP`, `TRUNCATE`, `alembic downgrade`, `dropdb`, migrate reset) → ask; advisory: no personal data in logs or fixtures.
+- **P10** Tier-3 additions (added in Phase 2, pending Sandhya's review): dependency installs → ask; WebFetch → ask; environment dumps (`env`, `printenv`) → ask; advisory: fixtures use provider test tokens and synthetic records only.
+- **P2a** A rule's `mechanism` may list several mechanisms (P7 layering = `[deny_rule, hook]`). `deny_rule` covers permission rules in either the deny or the ask list.
 
 ## R — Rendering
 

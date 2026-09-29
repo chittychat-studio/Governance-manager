@@ -1,0 +1,17 @@
+# Tier lookup table (SPEC T0-T5). Versioned; no LLM involvement (T1).
+# Every rule is checked; the highest matching tier wins (T0).
+version: 1
+rules:
+  - id: T2
+    tier: 3
+    when: {data_classes_any: [payments, health]}
+  - id: T3
+    tier: 3
+    when: {data_classes_any: [pii], exposure_or_tenancy: {exposure: public, tenancy: multi}}
+  - id: T4
+    tier: 2
+    when: {data_classes_any: [pii], exposure: internal, tenancy: single}
+  - id: T4
+    tier: 2
+    when: {data_classes_any: [auth], exposure: public}
+default: {id: T5, tier: 1}
