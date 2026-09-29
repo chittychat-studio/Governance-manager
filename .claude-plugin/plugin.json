@@ -1,0 +1,10 @@
+{
+  "$schema": "https://code.claude.com/docs/en/plugins/manifest-reference",
+  "name": "governor",
+  "displayName": "Governor",
+  "version": "0.1.0",
+  "description": "Turns a repo and a short intake into enforced agent governance: permission rules, hooks, rules files, lint, drift and an evidence report.",
+  "author": {"name": "chittychat-studio"},
+  "repository": "https://github.com/chittychat-studio/Governance-manager",
+  "keywords": ["governance", "hooks", "permissions", "security"]
+}

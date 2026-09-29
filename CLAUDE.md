@@ -18,6 +18,8 @@ Before any command that spends credits (verify, nightly, compose testing): print
 - `python -m pytest` — unit tests
 - `python scripts/lint.py <out_dir>` — V-series lint
 - `python scripts/verify.py` — Q-series, spends credits, approval required
+- `python scripts/init.py <repo> --questions` then `--answers a.json` — full install pipeline
+- `python scripts/sign_pack.py` — re-pin packs after editing any pack YAML (P4)
 
 ## Do not
 - Feed raw repo text to any subagent (L1).
