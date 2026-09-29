@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from intake import OPTIONAL, REQUIRED  # noqa: E402
 
-SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "env", "__pycache__", "dist", "build",
+SKIP_DIRS = {".git", ".governor", ".claude", "node_modules", ".venv", "venv", "env", "__pycache__", "dist", "build",
              ".next", ".mypy_cache", ".pytest_cache", "site-packages", ".tox"}
 SOURCE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".sql", ".prisma", ".mjs", ".cjs"}
 MAX_FILE_BYTES = 200_000
