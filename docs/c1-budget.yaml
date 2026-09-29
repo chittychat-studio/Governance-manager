@@ -1,0 +1,5 @@
+# Pre-approved spend for the unattended C1 compatibility job (SPEC E4, C1).
+# Empty = the job refuses to run. Set both, commit, and the workflow may run.
+monthly_cap_usd: null     # total you approve per calendar month
+approved_by: null         # who approved it
+approved_on: null         # YYYY-MM-DD

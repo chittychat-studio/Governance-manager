@@ -1,0 +1,36 @@
+# C1 compatibility job: latest Claude Code CLI + Q-series on the reference fixture.
+# SPENDS API CREDITS. Manual dispatch only until docs/c1-budget.yaml holds an approved cap (E4).
+# To make it nightly, add under `on:`  schedule: [{cron: "17 3 * * *"}]  after approving the cap.
+name: compat
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write
+jobs:
+  compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install -r requirements.txt -r fixtures/scratch-app/requirements.txt
+      - name: Budget gate (E4)
+        id: cap
+        run: echo "usd=$(python scripts/c1_budget.py)" >> "$GITHUB_OUTPUT"
+      - run: npm install -g @anthropic-ai/claude-code
+      - name: Q-series (Q1-Q3)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python scripts/verify.py --approve --runs 1 --billing api --cap-usd "${{ steps.cap.outputs.usd }}"
+      - name: Open an issue on failure (C2)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create --title "C1 compat failed: Claude Code $(claude --version 2>/dev/null || echo unknown)" \
+            --body "Q-series failed on the latest Claude Code CLI. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Last passing version: see verify-results/last.json on main."

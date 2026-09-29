@@ -127,7 +127,8 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 ## C — Compatibility
 
 - **C1** Nightly job installs latest Claude Code and Codex CLI, re-runs Q-series on the fixture. Cost-gated per E4.
-- **C2** On failure, pin the last passing CLI version range in the plugin manifest and open an issue.
+- **C2** On failure, open an issue naming the failing CLI version; the last passing version is in `verify-results/last.json`. (Changed 2026-09-29: `plugin.json` has no field for a CLI version range, so it cannot be pinned there.)
+- **C1a** The C1 job is manual-dispatch only until `docs/c1-budget.yaml` holds an approved monthly cap; each run's cap is monthly/31 and is enforced with `--max-budget-usd` (E4).
 
 ## NX — Deliberately excluded (v1)
 
