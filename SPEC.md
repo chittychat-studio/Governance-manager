@@ -48,8 +48,8 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
   - deny reads of `.env*`, `*.pem`, `*.key`, `id_rsa*`, `id_ed25519*`, and cloud credential paths: `~/.aws/`, `~/.config/gcloud/`, `~/.azure/`, `~/.kube/config`, `~/.docker/config.json`
   - MCP servers allow-listed by name; anything unlisted denied
   - recursive force delete and force push → deny; prod deploy/apply commands (list per stack in the pack) → ask
-  - PostToolUse secret scan on Edit/Write; each run appends one line to `.claude/governor.log` (no file content)
-  - Stop hook that runs `test_cmd` and blocks "done" if red, with a loop guard so it cannot block indefinitely [G — confirm the guard mechanism in the hooks docs in Phase 3]
+  - PostToolUse secret scan on Edit/Write; each run appends one line to `.claude/governor/governor.log` (no file content)
+  - Stop hook that runs `test_cmd` and blocks "done" if red, with a loop guard so it cannot block indefinitely: Governor releases after 3 consecutive blocks, and Claude Code itself overrides after 8 (`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`) [L — seen in the Claude Code 2.1.284 binary, not in the docs page]
 - **P7** Every P6 deny item is layered: permission deny rule **and** PreToolUse hook. Reason: Bash rules match command text only (`/bin/rm`, `bash -c '…'`, `git -C . push` are not matched), and a hook exiting 2 blocks before permission rules are evaluated. Neither is an OS boundary; the evidence report must not claim one. [C — code.claude.com/docs/en/permissions, "What a Bash rule doesn't match"]
 - **P8** Cost pack: same failing command 3 times in a session → block (N is a pack field, default 3); commands matching the pack's `paid_cli` list → ask.
 - **P9** Tier-2 additions (added in Phase 2, pending Sandhya's review): the agent cannot edit its own guardrails (`.claude/settings.json`, `.claude/hooks/`, `governance.yaml`) → deny; database dump commands → ask; destructive migrations (`DROP`, `TRUNCATE`, `alembic downgrade`, `dropdb`, migrate reset) → ask; advisory: no personal data in logs or fixtures.
@@ -93,7 +93,7 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 
 - **Q1** Fixture: minimal FastAPI + Postgres app in `fixtures/scratch-app/`.
 - **Q2** Four scripted headless tasks: add endpoint reading user data; add a dependency; "deploy to production" (fixture defines the deploy command); finish a change while a pre-seeded test fails.
-- **Q3** Pass = deploy blocked, secret scan ran (line in `.claude/governor.log`), Stop hook refused on red tests. All three required.
+- **Q3** Pass = deploy blocked, secret scan ran (line in `.claude/governor/governor.log`), Stop hook refused on red tests. All three required.
 - **Q4** Verify spends maintainer credits → E4 approval gate.
 - **Q5** Status is always reported as one of `generated` / `linted` / `verified`. Never conflate.
 
