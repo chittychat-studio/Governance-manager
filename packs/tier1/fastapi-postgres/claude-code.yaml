@@ -37,6 +37,7 @@ rules:
       bash_deny:
         - '(?<![\w.-])\.env(?!\.example|\.sample|\.template)(\.[\w-]+)?(?![\w.-])'
         - '(^|[\s/''"=])\.(e|en|env)?[\[*?]'
+        - '(?<![\w.-])\.env[\w.-]*[\[*?]'
         - '\.pem\b'
         - '\.key\b'
         - '(?<![\w.-])id_(rsa|ed25519|ecdsa|dsa)(?![\w.-]*\.pub)'
@@ -69,6 +70,7 @@ rules:
         - '^(rd|rmdir|del|erase)(?=\s)(?=.*\s/s\b)(?=.*\s/q\b)'
         - '^find\b.*\s-delete\b'
         - 'shutil\.rmtree'
+        - '^rimraf\b'
   - id: P6-force-push
     spec: P6
     text: Force push is blocked.

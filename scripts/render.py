@@ -175,8 +175,9 @@ def merge_settings(repo, deny, ask, hooks, managed_old, data):
     had (even if identical to a pack entry) stays the user's and is never removed by Governor."""
     path = repo / ".claude" / "settings.json"
     if data is not None:
+        # Back up only the user's original: on Governor's first render, and only if a file existed.
         backup = repo / BACKUP
-        if not backup.exists():
+        if not managed_old and not backup.exists():
             shutil.copy2(path, backup)
     else:
         data = {}

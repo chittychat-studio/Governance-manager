@@ -1,0 +1,85 @@
+# Detection eval corpus (SPEC I1-I3, T0-T5). Each case is a repo layout (path -> content) plus the facts
+# detect must report and the tier the pipeline must reach with the given answers (host claude-code).
+# `expect` fields are checked exactly; `data_classes_include` must be a subset of the detected classes.
+cases:
+  - id: D01-plain-fastapi-pg
+    files: {requirements.txt: "fastapi==0.115\nsqlalchemy\npsycopg2-binary\npytest\n", app/models.py: "email = Column(String)\n", fly.toml: "app='x'\n"}
+    expect: {stack: fastapi-postgres, app_type: api, exposure: public, test_cmd: "python -m pytest", pkg_mgr: pip}
+    data_classes_include: [pii]
+    answers: {tenancy: single}
+    tier: 3
+  - id: D02-uv-pyproject
+    files: {pyproject.toml: "[project]\nname='x'\ndependencies=['fastapi','psycopg[binary]','pytest']\n", uv.lock: ""}
+    expect: {stack: fastapi-postgres, test_cmd: "uv run pytest", pkg_mgr: uv}
+    answers: {data_classes: [none], exposure: internal, tenancy: single}
+    tier: 1
+  - id: D03-poetry-asyncpg-auth
+    files: {pyproject.toml: "[tool.poetry.dependencies]\nfastapi='*'\nasyncpg='*'\npasslib='*'\n[tool.poetry.group.dev.dependencies]\npytest='*'\n", poetry.lock: ""}
+    expect: {stack: fastapi-postgres, test_cmd: "poetry run pytest", pkg_mgr: poetry}
+    data_classes_include: [auth]
+    answers: {exposure: public, tenancy: single}
+    tier: 2
+  - id: D04-monorepo-stripe
+    files: {backend/pyproject.toml: "[project]\nname='api'\ndependencies=['fastapi','asyncpg','stripe','pytest']\n", frontend/package.json: "{\"dependencies\":{\"react\":\"18\",\"vite\":\"5\"}}", backend/app/models.py: "card_number = Column(String)\n"}
+    expect: {stack: fastapi-postgres}
+    data_classes_include: [payments]
+    answers: {exposure: internal, tenancy: single}
+    tier: 3
+  - id: D05-sqlalchemy-extra
+    files: {requirements.txt: "fastapi\nsqlalchemy[postgresql-asyncpg]>=2\npytest\n"}
+    expect: {stack: fastapi-postgres}
+    answers: {data_classes: [none], exposure: internal, tenancy: single}
+    tier: 1
+  - id: D06-compose-postgres
+    files: {requirements.txt: "fastapi\nsqlalchemy\npytest\n", docker-compose.yml: "services:\n  db:\n    image: postgres:16-alpine\n"}
+    expect: {stack: fastapi-postgres}
+    answers: {data_classes: [none], exposure: internal, tenancy: single}
+    tier: 1
+  - id: D07-requirements-include
+    files: {requirements.txt: "-r requirements/prod.txt\n", requirements/prod.txt: "fastapi\npsycopg\npyjwt\n", requirements/dev.txt: "pytest\n"}
+    expect: {stack: fastapi-postgres}
+    data_classes_include: [auth]
+    answers: {exposure: public, tenancy: single}
+    tier: 2
+  - id: D08-multi-tenant
+    files: {requirements.txt: "fastapi\npsycopg\npytest\n", app/models.py: "tenant_id = Column(Integer)\nemail = Column(String)\n"}
+    expect: {tenancy: multi}
+    data_classes_include: [pii]
+    answers: {exposure: internal}
+    tier: 3
+  - id: D09-health
+    files: {requirements.txt: "fastapi\npsycopg\npytest\n", app/models.py: "patient_id = Column(Integer)\ndiagnosis = Column(String)\n"}
+    data_classes_include: [health]
+    answers: {exposure: internal, tenancy: single}
+    tier: 3
+  - id: D10-windows-bom-crlf
+    files: {requirements.txt: !!binary 77u/ZmFzdGFwaQ0KcHN5Y29wZzItYmluYXJ5DQpweXRlc3QNCg==}
+    expect: {stack: fastapi-postgres, test_cmd: "python -m pytest"}
+    answers: {data_classes: [none], exposure: internal, tenancy: single}
+    tier: 1
+  - id: D11-agents-md-only
+    files: {requirements.txt: "fastapi\npsycopg\npytest\n", AGENTS.md: "# notes\n"}
+    expect: {agent: [claude-code, codex]}
+    answers: {data_classes: [none], exposure: internal, tenancy: single}
+    tier: 1
+  - id: D12-no-db-refused
+    files: {requirements.txt: "fastapi\npytest\n"}
+    expect: {stack: fastapi}
+    answers: {data_classes: [none], exposure: internal, tenancy: single}
+    refused: "no pack"
+  - id: D13-react-only-refused
+    files: {package.json: "{\"dependencies\":{\"react\":\"18\",\"vite\":\"5\"},\"scripts\":{\"test\":\"vitest\"}}", package-lock.json: "{}"}
+    expect: {stack: react-vite, app_type: web-spa, test_cmd: "npm test"}
+    answers: {data_classes: [none], exposure: public, tenancy: single}
+    refused: "no pack"
+  - id: D14-empty-repo-asks
+    files: {README.md: "hello\n"}
+    expect: {}
+    answers: {}
+    refused: "required field"
+  - id: D15-venv-ignored
+    files: {requirements.txt: "fastapi\npsycopg\npytest\n", .venv/lib/site-packages/stripe/__init__.py: "card_number = 1\n", node_modules/x/index.js: "tenant_id = 1\n"}
+    expect: {stack: fastapi-postgres}
+    data_classes_exclude: [payments]
+    answers: {data_classes: [none], exposure: internal, tenancy: single}
+    tier: 1

@@ -18,3 +18,10 @@ jobs:
       - run: python -m pytest -q
       - name: Pack pins current (P4)
         run: python scripts/sign_pack.py --check
+      - name: Eval suite gates (deterministic; no model calls)
+        run: python scripts/eval.py --out eval-results
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-scorecard
+          path: eval-results/

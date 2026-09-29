@@ -145,6 +145,47 @@ def _inner_script(toks):
     return None
 
 
+# Runners that execute the rest of the line as another command (uv run pytest, docker compose exec db psql).
+RUNNERS = {("uv", "run"), ("poetry", "run"), ("pdm", "run"), ("pipenv", "run"), ("hatch", "run"), ("rye", "run"),
+           ("pnpm", "exec"), ("pnpm", "dlx"), ("yarn", "dlx"), ("npm", "exec")}
+SINGLE_RUNNERS = {"npx", "bunx", "pipx"}
+CONTAINER_ARGFLAGS = {"-u", "--user", "-e", "--env", "-w", "--workdir", "--env-file", "--name", "-p", "--publish",
+                      "-v", "--volume", "--entrypoint", "--index", "-l", "--label", "--network", "--profile", "-f",
+                      "--file", "--project-name", "-c", "--container", "-n", "--namespace", "--context"}
+
+
+def _runner_inner(toks):
+    """If toks run another command through a runner or container, return that command's tokens."""
+    prog = toks[0].lower()
+    rest = toks[1:]
+    if prog in SINGLE_RUNNERS:
+        if prog == "pipx" and rest[:1] == ["run"]:
+            rest = rest[1:]
+        while rest and rest[0].startswith("-"):
+            rest = rest[1:]
+        return rest
+    if len(toks) > 1 and (prog, toks[1].lower()) in RUNNERS:
+        rest = toks[2:]
+        while rest and rest[0].startswith("-"):
+            rest = rest[1:]
+        return rest
+    if prog in ("docker", "podman", "kubectl", "oc", "docker-compose"):
+        i = 1
+        if prog in ("docker", "podman") and i < len(toks) and toks[i] == "compose":
+            i += 1
+        while i < len(toks) and toks[i].startswith("-"):   # global flags (compose -f x, kubectl -n x)
+            i += 2 if toks[i] in CONTAINER_ARGFLAGS else 1
+        if i >= len(toks) or toks[i] not in ("exec", "run"):
+            return None
+        i += 1
+        if prog in ("kubectl", "oc"):
+            return toks[toks.index("--") + 1:] if "--" in toks[i:] else None
+        while i < len(toks) and toks[i].startswith("-"):
+            i += 2 if toks[i] in CONTAINER_ARGFLAGS else 1
+        return toks[i + 1:] if i + 1 < len(toks) else None   # skip the service/container name
+    return None
+
+
 def _normalise_one(seg, depth):
     seg = seg.replace("\\", "/")
     try:
@@ -160,6 +201,10 @@ def _normalise_one(seg, depth):
         if inner is not None:
             return [" ".join(toks)] + normalise(inner, depth + 1)
     out = []
+    if depth < 4:
+        inner = _runner_inner(toks)
+        if inner:
+            out += normalise(" ".join(shlex.quote(x) for x in inner), depth + 1)
     if toks[0] == "git":
         rest, i = [], 1
         while i < len(toks) and toks[i].startswith("-"):

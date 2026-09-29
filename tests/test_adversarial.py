@@ -246,3 +246,23 @@ def test_stop_reruns_tests_after_untracked_or_staged_change(installed, how):
         subprocess.run(["git", "add", "check.py"], cwd=installed, check=True)
     out = _stop(installed).stdout
     assert out and json.loads(out)["decision"] == "block"
+
+
+@pytest.mark.parametrize("cmd,want", [
+    ("docker compose exec db pg_dumpall", "ask"), ("uv run alembic downgrade -1", "ask"),
+    ("docker exec -it -u root api rm -rf /data", "deny"), ("kubectl -n prod exec api-0 -- rm -rf /x", "deny"),
+    ("npx rimraf dist", "deny"), ("cat .env.*", "deny"),
+    ("docker compose exec db psql -U app -c 'SELECT 1'", "allow"), ("uv run pytest -q", "allow"),
+])
+def test_runner_and_container_unwrapping(installed, cmd, want):
+    """Found by scripts/eval.py baseline (2026-09-29)."""
+    assert decision(pre(installed, "Bash", command=cmd)) == want, cmd
+
+
+def test_backup_is_only_the_users_original(tmp_path):
+    """R5: with no user settings.json, re-rendering must not 'back up' Governor's own output."""
+    import render
+    from conftest import install
+    repo = install(tmp_path / "r")
+    render.render(repo)
+    assert not (repo / render.BACKUP).exists()
