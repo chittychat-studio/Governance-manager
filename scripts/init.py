@@ -1,4 +1,4 @@
-"""One-shot install: detect -> ask -> governance -> render -> lint [-> CI] (SPEC I1-I5, I3a, R1-R6, V7, D3, T6).
+"""One-shot install: detect -> ask -> governance -> render -> lint [-> CI] (SPEC I1-I5, I3a, L1a, R1-R6, V7, D3, T6).
 
 Two steps so the questions come from the fixed bank and the answers from the user (I5a, L1):
   python scripts/init.py <repo> --questions [--host claude-code]     # detected facts + questions, as JSON
@@ -103,8 +103,9 @@ def install(repo, answers, mcp_allow=None, with_ci=False, host=None):
     out += [f"corrected {c['field']}: detected {c['detected']} -> {c['answer']}" for c in corrections]
     blocked = [s for s in mcp_servers(repo) if s not in gov["mcp_allow"]]
     if blocked and "claude-code" in gov["packs"]:
-        out.append(f"note: MCP servers in .mcp.json that P6 will block: {blocked}. "
-                   "Re-run with --mcp-allow " + ",".join(blocked) + " to allow them.")
+        names = ", ".join(detect.safe_name(n) for n in blocked[:20]) + (" and more" if len(blocked) > 20 else "")
+        out.append(f"note: MCP servers in .mcp.json that P6 will block: {names}. These names come from the repo; "
+                   "only the user decides which to trust, by re-running init with --mcp-allow and names they type (L1a).")
     if "claude-code" not in gov["packs"]:
         out.append("note: no Claude Code agent selected, so nothing is enforced for Claude Code (Codex output only).")
     out += [f"warning: {w}" for w in warns] + [f"FAIL: {f}" for f in fails]

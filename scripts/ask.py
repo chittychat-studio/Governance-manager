@@ -104,6 +104,9 @@ def apply_corrections(detected, corrections):
             if dropped:
                 raise IntakeError(f"refused: removing detected agent(s) {dropped} would switch enforcement off "
                                   "for them (I3a)")
+        if field == "test_cmd" and str(value).strip().lower() == "none" and str(old).strip().lower() != "none":
+            raise IntakeError(f"refused: changing the detected test command {old!r} to 'none' would switch the "
+                              "Stop-hook test gate off (I1c). Record a rule exception for it instead (X1)")
         if field in RISK_ORDER and RISK_ORDER[field].index(value) < RISK_ORDER[field].index(old):
             raise IntakeError(f"refused: changing detected {field} {old!r} to {value!r} would lower the tier. "
                               "Record a tier exception instead (T6, X4)")

@@ -20,6 +20,19 @@ from pyfind import works  # noqa: E402
 LINE_CAP = 150
 # V4: extended only by editing SPEC V4.
 FORBIDDEN = ["as needed", "where appropriate", "best practices", "ensure security"]
+# V10: text telling the agent to switch guardrails off. Extended only by editing SPEC V10.
+GUARDRAIL_OFF = [
+    r"ignore (all |any )?(the )?(previous|prior|above|earlier) instructions",
+    r"disable(s|d)? (all |the |its |governor'?s? )*hooks",
+    r"disableAllHooks",
+    r"bypassPermissions",
+    r"dangerously-skip-permissions",
+    r"ignore (the )?governor",
+    r"governor (is|has been) (deprecated|disabled|turned off|off)",
+    r"(turn|switch) off (the )?(governor|guardrails|hooks)",
+    r"(do not|don't) (follow|obey) (the )?(governor|hooks|guardrails)",
+]
+INSTRUCTION_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md", "AGENTS.md"]
 
 
 def _unscoped_rules(repo):
@@ -30,7 +43,7 @@ def _unscoped_rules(repo):
 
 
 def lint(repo):
-    """Return (failures, warnings) lists of 'Vn: message' strings (V1-V7)."""
+    """Return (failures, warnings) lists of 'Vn: message' strings (V1-V10)."""
     repo = Path(repo).resolve()
     fails, warns = [], []
     gov = governance.read(repo)
@@ -53,7 +66,32 @@ def lint(repo):
     if "claude-code" in gov["packs"]:
         _lint_claude(repo, gov, managed, fails, warns)
     _lint_integrity(repo, managed, fails)
+    warns += guardrail_off_text(repo)
     return fails, warns
+
+
+def guardrail_off_text(repo):
+    """V10: warnings for instruction files whose text outside Governor's blocks tells the agent to switch
+    guardrails off. Advisory: the user's own text is never changed, only pointed at."""
+    repo = Path(repo)
+    files = [repo / f for f in INSTRUCTION_FILES]
+    files += sorted((repo / ".claude" / "rules").rglob("*.md")) if (repo / ".claude" / "rules").is_dir() else []
+    files += sorted((repo / ".claude" / "skills").rglob("SKILL.md")) if (repo / ".claude" / "skills").is_dir() else []
+    out = []
+    for f in files:
+        if not f.is_file() or f.as_posix().endswith(render.RULES_MD):
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        while render.BLOCK_START in text and render.BLOCK_END in text.split(render.BLOCK_START, 1)[1]:
+            head, rest = text.split(render.BLOCK_START, 1)
+            text = head + rest.split(render.BLOCK_END, 1)[1]
+        for n, line in enumerate(text.splitlines(), 1):
+            hit = next((pat for pat in GUARDRAIL_OFF if re.search(pat, line, re.I)), None)
+            if hit:
+                out.append(f"V10: {f.relative_to(repo).as_posix()}:{n} tells the agent to switch guardrails off; "
+                           "this text loads every session. Remove it unless you wrote it on purpose.")
+                break
+    return out
 
 
 def _lint_consistency(gov, fails):
@@ -70,6 +108,13 @@ def _lint_consistency(gov, fails):
     except (IntakeError, KeyError, TypeError) as exc:
         fails.append(f"V9: intake invalid: {exc}")
         return
+    try:
+        from render import test_cmd_problem
+        problem = test_cmd_problem(gov)
+    except (PackError, KeyError, TypeError, ValueError) as exc:
+        problem = f"cannot check test_cmd: {exc}"
+    if problem:
+        fails.append(f"V9: {problem}")
     if gov["tier"].get("computed") != computed:
         fails.append(f"V9: tier.computed is {gov['tier'].get('computed')} but intake gives {computed}")
     valid_tiers = []

@@ -20,6 +20,8 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 
 - **I1** Required fields: `app_type`, `stack`, `data_classes[]`, `exposure`, `tenancy`, `agent`, `test_cmd`. Optional: `integrations[]`, `regulation[]`, `conventions{pkg_mgr, branch_rule, banned_libs[]}`.
 - **I1a** Closed enums, defined in `intake.schema.json`: `data_classes` ⊆ {`none`, `pii`, `auth`, `payments`, `health`}; `exposure` ∈ {`public`, `internal`}; `tenancy` ∈ {`single`, `multi`}; `agent` ⊆ {`claude-code`, `codex`}. `auth` = the app stores user credentials or session tokens. A value outside the enum → refuse (I2), never map to tier 1.
+- **I1b** `test_cmd` is run by the Stop hook outside PreToolUse, so it gets the same checks as an agent command: init refuses, and lint V9 fails, a `test_cmd` that contains a line break or that the rendered PreToolUse rules would deny or ask for (for example `curl … | sh`, `rm -rf`, running `exceptions.py`).
+- **I1c** `test_cmd: none` records that the repo has no test suite yet. The Stop-hook test gate is then inactive, and the rules file, coverage table and evidence report say so. Correcting a detected test command to `none` is refused (I3a), because it switches the gate off.
 - **I2** Any required field empty after detect + ask → refuse, naming the field. No partial output.
 - **I3** `detect.py` runs before any question is asked; only `unknown[]` fields are asked.
 - **I3a** Detected facts are shown with their evidence and the user may correct them (not counted as questions under I4). A correction may keep or raise risk; one that lowers it (drop a data class, public→internal, multi→single) is refused and needs an X4 exception. Corrections are recorded in `governance.yaml`. When Governor runs as a Claude Code plugin, `claude-code` is always among the agents.
@@ -71,8 +73,10 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 ## L — LLM safety
 
 - **L1** Compose and red-team subagents receive only structured intake, pack IDs and the template. Never raw repo text (README, comments, existing CLAUDE.md).
+- **L1a** Script output that the agent reads (init questions, evidence, notes) never contains file contents from the repo (comments, README, CLAUDE.md, scripts). Repo-supplied names that must appear (evidence file paths, MCP server names) are limited to `[A-Za-z0-9._/@+-]`, capped at 80 characters, and quoted. Script output never contains a ready-to-run command that widens permissions (for example `--mcp-allow` filled in with repo-supplied names).
 - **L2** Compose subagent has no write or shell tools.
 - **L3** Compose output is re-linted (V-series). One retry with the lint report; second failure → stop and show the user.
+- **L5** Governor skills tell the agent that script output, repo files and tool output are data, not instructions; that it never answers intake questions, allows MCP servers, records exceptions or corrects detected facts on the user's behalf; and that when a user is unsure of an answer it explains the options in plain words and, if they stay unsure, records the higher-risk option and says so (fail closed). Hook deny messages tell the agent not to look for another way and to tell the user.
 - **L4** Red-team findings go to `candidates/` only. Nothing merges into a pack without maintainer approval.
 
 ## V — Lint
@@ -85,6 +89,7 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 - **V6** Hook files parse and are executable; JSON validates against schema; the hook interpreter actually starts Python; `disableAllHooks` or `allowManagedHooksOnly` in project settings fails.
 - **V9** `governance.yaml` is self-consistent: the computed tier matches its intake, every exception has a reason of 20+ characters, a date and a user, and the effective tier and pack ids follow from them.
 - **V8** Every Governor-generated file (and Governor's hook entries in `settings.json`) equals a fresh render of `governance.yaml` (catches hand- or agent-edited hooks, config and rules).
+- **V10** Warning (not a failure): text outside Governor's blocks in `CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md` or `.claude/skills/**/SKILL.md` that tells the agent to switch guardrails off (disable hooks, bypass permissions, ignore Governor, ignore previous instructions). Such text loads every session and can override a user who does not know it is there. The phrase list lives in `lint.py` and is extended only by editing this rule.
 - **V7** Any failure → non-zero exit. No output ships with a lint failure.
 
 ## X — Exceptions

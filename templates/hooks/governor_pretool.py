@@ -1,4 +1,4 @@
-"""PreToolUse guard (SPEC P6, P7, P8, P9, P10). Stdlib only (P5).
+"""PreToolUse guard (SPEC P6, P7, P8, P9, P10, L5). Stdlib only (P5).
 
 deny -> exit 2 with the rule id on stderr; ask -> permissionDecision "ask".
 Covers the Bash and PowerShell tools. Any internal error blocks (fail closed); logging can never
@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import governor_common as gc  # noqa: E402
 
 WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+NO_WORKAROUND = ("Do not look for another way to do this; tell the user what was blocked and why "
+                 "(Governor rule, SPEC L5).")
 
 
 def decide(event, cfg):
@@ -81,7 +83,7 @@ def main():
     if decision is None:
         return 0
     if decision == "deny":
-        print(f"Blocked by Governor rule {rule}: {text}", file=sys.stderr)
+        print(f"Blocked by Governor rule {rule}: {text} {NO_WORKAROUND}", file=sys.stderr)
         gc.log(event, f"deny {rule} tool={event.get('tool_name')}")
         return 2
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",

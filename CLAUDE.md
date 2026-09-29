@@ -36,3 +36,4 @@ Before any command that spends credits (verify, nightly, compose testing): print
 - 2026-09-29: Kill criteria K1, K2 adopted.
 - 2026-09-29: Production-readiness review (3 independent reviewers) → hardening: PowerShell coverage, fail-closed logging, lint V8 integrity, detected facts correctable upward only (P7, V8, I3a, T6). Regression cases live in tests/test_adversarial.py and tests/test_batch2.py; add to them, never delete.
 - 2026-09-29: Built in Claude Code cloud sessions, one phase per session, PR per phase (docs/PROMPTS.md). Verify (Phase 4) runs locally, not in cloud.
+- 2026-09-29: Edge-case round. test_cmd checked like an agent command (I1b); `none` for no tests (I1c); repo-supplied names quoted and capped, no ready-made allow commands (L1a); skills treat output as data, novice unsure → higher risk (L5); guardrail-off text warning (V10). Live edge suite designed, not run (needs E4 amendment + approval).

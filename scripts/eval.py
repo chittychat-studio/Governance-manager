@@ -5,6 +5,7 @@ Suites (evals/*.yaml):
   detection    repo layouts -> detected facts, tier or refusal via init (host claude-code)
   secrets      lines the PostToolUse secret scan must / must not flag
   pipeline     multi-step flows: init, exceptions, tamper, lint, drift, doctor, report, CI gate
+  edge         novice users, prompt injection in repo text, jailbreak attempts, skill text (I1b, I1c, L1a, L5, V10)
 Gates: evals/thresholds.yaml. No network, no model calls (E2): this measures the deterministic layer only;
 live-agent behaviour is the Q-series (scripts/verify.py, cost-gated).
 
@@ -13,6 +14,7 @@ Exit 0 when every gate passes, 1 otherwise.
 """
 import argparse
 import datetime
+import re
 import hashlib
 import importlib.util
 import json
@@ -313,6 +315,144 @@ def run_pipeline(work):
             "failures": [r for r in rows if not r["ok"]]}
 
 
+# ---------------------------------------------------------------- edge
+SKILLS = ROOT / "skills"
+GENERATED = [".claude/rules/governor.md", ".claude/settings.json", ".claude/hooks/governor_config.json",
+             ".claude/governor/COVERAGE.md", "governance.yaml"]
+
+
+class _Edge:
+    def __init__(self, data):
+        self.content, self.name = data["content_marker"], data["name_marker"]
+
+    def leak(self, text):
+        """L1/L1a on agent-facing text: no file contents; names only quoted and capped."""
+        if self.content in text:
+            return f"file content marker {self.content} in output"
+        bare = text
+        for q in re.findall(r"'[^'\n]{0,82}'", text):
+            bare = bare.replace(q, "")
+        if self.name in bare:
+            return f"name marker {self.name} outside a quoted, capped name"
+        return None
+
+
+def _stop(repo, sid):
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(repo))
+    event = {"session_id": sid, "cwd": str(repo), "hook_event_name": "Stop", "stop_hook_active": False}
+    r = subprocess.run([sys.executable, str(repo / ".claude/hooks/governor_stop.py")], input=json.dumps(event),
+                       capture_output=True, text=True, env=env, timeout=300)
+    if r.returncode not in (0, 2):
+        return f"FAIL-OPEN(exit {r.returncode})"
+    if r.returncode == 2:
+        return "error"
+    return "block" if r.stdout.strip() and json.loads(r.stdout).get("decision") == "block" else "allow"
+
+
+def _fire_full(repo, case):
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(repo))
+    r = subprocess.run([sys.executable, str(repo / ".claude/hooks/governor_pretool.py")],
+                       input=json.dumps(_event(case, repo)), capture_output=True, text=True, env=env, timeout=60)
+    if r.returncode == 2:
+        return "deny", r.stderr
+    if r.returncode == 0 and r.stdout.strip():
+        out = json.loads(r.stdout)["hookSpecificOutput"]
+        return out["permissionDecision"], out.get("permissionDecisionReason", "")
+    return ("allow", "") if r.returncode == 0 else (f"FAIL-OPEN(exit {r.returncode})", r.stderr)
+
+
+def _edge_step(repo, s, state, ed, sid, bases):
+    do, want = s["do"], s.get("expect")
+    if do == "init":
+        code, lines = init.install(repo, s.get("answers") or {}, host="claude-code")
+        text = "\n".join(lines)
+        leak = ed.leak(text)
+        if leak:
+            return False, leak
+        if s.get("not_contains") and s["not_contains"] in text:
+            return False, f"output contains {s['not_contains']!r}: {lines}"
+        if want == "ok":
+            gov = governance.read(repo)
+            tier_ok = "tier" not in s or (gov and gov["tier"]["effective"] == s["tier"])
+            return code == 0 and tier_ok and s.get("contains", "") in text, f"code {code}; {lines[:4]}"
+        return code != 0 and s.get("contains", "") in text, f"code {code}; {lines[:2]}"
+    if do == "questions":
+        q = init.questions(repo, "claude-code")
+        text = json.dumps(q)
+        leak = ed.leak(text)
+        if leak:
+            return False, leak
+        if len(q["questions"]) > s.get("max", 7):
+            return False, f"{len(q['questions'])} questions"
+        words = [w for w in s.get("no_words", []) for x in q["questions"] if w in x["question"].lower()]
+        return not words, f"questions mention {words}"
+    if do == "facts_match_twin":
+        twin = _materialise(repo.parent / (repo.name + "-twin"), bases[s["twin"]])
+        a, b = detect.detect(repo)["detected"], detect.detect(twin)["detected"]
+        return a == b, f"injected {a} != clean {b}"
+    if do == "generated_clean":
+        texts = [(repo / f).read_text(encoding="utf-8") for f in GENERATED if (repo / f).exists()]
+        for name in ("CLAUDE.md", "AGENTS.md"):
+            t = (repo / name).read_text(encoding="utf-8") if (repo / name).exists() else ""
+            texts += [t.split(render.BLOCK_START, 1)[1].split(render.BLOCK_END, 1)[0]] if render.BLOCK_START in t else []
+        bad = [ed.leak(t) for t in texts if ed.leak(t)]
+        return not bad and len(texts) >= 5, str(bad[:2]) or f"only {len(texts)} generated texts found"
+    if do == "stop_hook":
+        got = _stop(repo, sid)
+        return got == want, f"got {got}"
+    if do == "fire":
+        decision, msg = _fire_full(repo, dict(s, id=sid))
+        missing = [m for m in s.get("message", []) if m not in msg]
+        return decision == want and not missing, f"got {decision}; missing {missing} in {msg[:160]!r}"
+    if do == "lint" and want == "warn":
+        _, warns = lint.lint(repo)
+        return any(w.startswith(s["code"]) for w in warns), str(warns[:3])
+    if do in ("skill_has", "skill_lacks"):
+        text = (SKILLS / s["skill"] / "SKILL.md").read_text(encoding="utf-8")
+        found = [t for t in s["text"] if (t.lower() in text.lower())]
+        bad = [t for t in s["text"] if t not in found] if do == "skill_has" else found
+        return not bad, f"{s['skill']}: {'missing' if do == 'skill_has' else 'contains'} {bad}"
+    return _step(repo, s, state)
+
+
+def run_edge(work):
+    data = _load("edge")
+    ed = _Edge(data)
+    rows = []
+    for sc in data["scenarios"]:
+        repo = _materialise(work / "edge" / sc["id"], data["bases"][sc["base"]])
+        state, failed = {}, None
+        for i, s in enumerate(sc["steps"], 1):
+            try:
+                ok, detail = _edge_step(repo, s, state, ed, f"edge-{sc['id']}", data["bases"])
+            except Exception as exc:  # noqa: BLE001 - a crash is a scenario failure, reported not raised
+                ok, detail = False, f"crashed: {type(exc).__name__}: {exc}"
+            if not ok:
+                failed = {"step": i, "do": s["do"], "detail": detail}
+                break
+        rows.append({"id": sc["id"], "group": sc["group"], "ok": failed is None, "failed": failed})
+    gaps = []
+    for g in data.get("gaps", []):
+        measured = []
+        if g.get("check", {}).get("do") == "name_marker_quoted":
+            repo = _materialise(work / "edge" / g["id"], data["bases"][g["check"]["base"]])
+            ev = json.dumps(init.questions(repo, "claude-code")["evidence"])
+            measured.append(f"name reaches evidence: {ed.name in ev}; only quoted: {ed.leak(ev) is None}")
+        if g.get("fire"):
+            repo = _materialise(work / "edge" / g["id"], data["bases"]["api"])
+            init.install(repo, {"exposure": "public", "tenancy": "single"}, host="claude-code")
+            measured += [f"`{f['cmd']}` -> {_fire_full(repo, dict(f, id=g['id']))[0]}" for f in g["fire"]]
+        gaps.append({"id": g["id"], "note": g["note"], "measured": measured})
+    groups = {}
+    for r in rows:
+        a = groups.setdefault(r["group"], [0, 0])
+        a[0] += r["ok"]
+        a[1] += 1
+    return {"metrics": {"cases": len(rows), "edge_pass": _rate(sum(r["ok"] for r in rows), len(rows)),
+                        **{f"edge_{k}": f"{a}/{b}" for k, (a, b) in groups.items()}},
+            "failures": [r for r in rows if not r["ok"]], "gaps": gaps}
+
+
 # ---------------------------------------------------------------- scoring
 def _rate(n, d):
     return round(n / d, 4) if d else 1.0
@@ -330,6 +470,7 @@ def gates(metrics, th):
         ("secret_recall", metrics["secrets"]["secret_recall"] >= th["secret_recall_min"], f">= {th['secret_recall_min']}"),
         ("secret_false_positive", metrics["secrets"]["secret_false_positive"] <= th["secret_false_positive_max"], f"<= {th['secret_false_positive_max']}"),
         ("pipeline_pass", metrics["pipeline"]["pipeline_pass"] >= th["pipeline_pass_min"], f">= {th['pipeline_pass_min']}"),
+        ("edge_pass", metrics["edge"]["edge_pass"] >= th["edge_pass_min"], f">= {th['edge_pass_min']}"),
     ]
     return [{"gate": g, "pass": ok, "target": t} for g, ok, t in checks]
 
@@ -341,7 +482,7 @@ def scorecard(res, gate_rows):
              "", "Deterministic layer only (hooks, detect, pipeline). Live-agent behaviour is the Q-series "
              "(`scripts/verify.py`), not measured here.", "", "## Gates", "", "| Gate | Value | Target | Result |",
              "|---|---|---|---|"]
-    flat = {**m["enforcement"], **m["detection"], **m["secrets"], **m["pipeline"]}
+    flat = {**m["enforcement"], **m["detection"], **m["secrets"], **m["pipeline"], **m["edge"]}
     for g in gate_rows:
         lines.append(f"| {g['gate']} | {flat[g['gate']]} | {g['target']} | {'PASS' if g['pass'] else '**FAIL**'} |")
     e = res["enforcement"]
@@ -349,6 +490,10 @@ def scorecard(res, gate_rows):
               f"(tiers 1-3, Bash and PowerShell tools). Documented gaps stopped anyway: {m['enforcement']['gaps_stopped']}.",
               "", "| Rule | Attacks stopped |", "|---|---|"]
     lines += [f"| {k} | {v} |" for k, v in e["by_rule"].items()]
+    lines += ["", "## Edge cases", "", "Novice users, prompt injection in repo text, jailbreak attempts and skill text. "
+              "Deterministic only: whether a live agent follows the skill text is the cost-gated live suite.", "",
+              "| Group | Passed |", "|---|---|"]
+    lines += [f"| {k[5:]} | {v} |" for k, v in m["edge"].items() if k.startswith("edge_") and k != "edge_pass"]
     sections = [("Enforcement misses", e["failures"],
                  lambda r: f"- {r['id']} ({r['kind']}, {r['tool']}): `{r['input']}` → {r['decision']}"
                            f"{' via ' + str(r['got_rule']) if r['got_rule'] else ''}; expected {r['expect']}"
@@ -359,7 +504,13 @@ def scorecard(res, gate_rows):
                 ("Secret-scan misses", res["secrets"]["failures"],
                  lambda r: f"- {r['id']}: {'missed' if r['want'] else 'false positive'}: `{r['line']}`"),
                 ("Pipeline failures", res["pipeline"]["failures"],
-                 lambda r: f"- {r['id']}: step {r['failed']['step']} ({r['failed']['do']}): {r['failed']['detail']}")]
+                 lambda r: f"- {r['id']}: step {r['failed']['step']} ({r['failed']['do']}): {r['failed']['detail']}"),
+                ("Edge-case failures", res["edge"]["failures"],
+                 lambda r: f"- {r['id']} ({r['group']}): step {r['failed']['step']} ({r['failed']['do']}): "
+                           f"{r['failed']['detail']}"),
+                ("Edge-case documented gaps (not gated)", res["edge"]["gaps"],
+                 lambda r: f"- {r['id']}: {r['note']}" + (f" Measured: {'; '.join(r['measured'])}." if r["measured"]
+                                                          else ""))]
     for title, items, fmt in sections:
         lines += ["", f"## {title}", ""] + ([fmt(r) for r in items] or ["- none"])
     return "\n".join(lines) + "\n"
@@ -372,7 +523,7 @@ def main(argv=None):
     work = Path(tempfile.mkdtemp(prefix="governor-eval-"))
     try:
         res = {"enforcement": run_enforcement(work), "detection": run_detection(work),
-               "secrets": run_secrets(work), "pipeline": run_pipeline(work)}
+               "secrets": run_secrets(work), "pipeline": run_pipeline(work), "edge": run_edge(work)}
     finally:
         shutil.rmtree(work, ignore_errors=True)
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()

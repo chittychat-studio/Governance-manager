@@ -65,6 +65,13 @@ init, secret-scan lines, multi-step pipeline scenarios) and fails if any gate in
 The latest scorecard is `evals/results/latest.md`; CI runs it on every PR. It does not measure live-agent
 behaviour; that is the cost-gated Q-series (`scripts/verify.py`).
 
+`evals/edge.yaml` covers edge cases: a user with only an idea and no app, no tests, unsure or free-text answers;
+prompt injection planted in README, CLAUDE.md, AGENTS.md, code comments, file names, compose files and `.mcp.json`;
+forged answer files, hostile test commands and attempts to switch guardrails off. It checks that detected facts
+match a clean twin repo, that no file contents reach what the agent reads, and that the skills carry the
+data-not-instructions text. Whether a live agent actually follows that text is not measured: `evals/live_edge.yaml`
+is a design for that suite, not run, because it spends credits (E4).
+
 ## Develop
 
 ```

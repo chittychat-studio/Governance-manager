@@ -9,3 +9,4 @@ detection_accuracy_min: 1.0       # detection cases fully correct (facts + tier/
 secret_recall_min: 0.95
 secret_false_positive_max: 0.05
 pipeline_pass_min: 1.0
+edge_pass_min: 1.0               # edge-case scenarios (novice, injection, jailbreak, skills) fully correct

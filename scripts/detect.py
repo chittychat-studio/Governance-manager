@@ -49,6 +49,15 @@ COMPOSE_PG_RE = re.compile(r"^\s*image:\s*[\"']?(postgres|postgis/postgis|bitnam
 MAX_DEPTH = 2
 
 
+SAFE_NAME = re.compile(r"[^A-Za-z0-9._/@+-]")
+
+
+def safe_name(name, cap=80):
+    """A repo-supplied name as quoted data for agent-facing output (L1a): restricted characters, capped length."""
+    s = SAFE_NAME.sub("?", str(name))
+    return "'" + (s if len(s) <= cap else s[:cap - 3] + "...") + "'"
+
+
 def _read(path):
     """Read a user file as text; tolerant of a UTF-8 BOM (Windows Notepad) and bad bytes."""
     return Path(path).read_text(encoding="utf-8-sig", errors="ignore")
@@ -99,7 +108,7 @@ def _requirements(path, repo, deps, extras, seen):
             continue
         deps.setdefault(_norm(line), rel)
         if PG_EXTRA_RE.match(line):
-            extras.setdefault("postgres", f"{rel}: {line}")
+            extras.setdefault("postgres", f"{safe_name(rel)}: postgres extra on {safe_name(_norm(line))}")
 
 
 def _pyproject_names(data):
@@ -140,12 +149,12 @@ def read_python_deps(repo, extras=None):
             for n in _pyproject_names(data):
                 deps.setdefault(_norm(n), rel)
                 if PG_EXTRA_RE.match(n):
-                    extras.setdefault("postgres", f"{rel}: {n}")
+                    extras.setdefault("postgres", f"{safe_name(rel)}: postgres extra on {safe_name(_norm(n))}")
             if data.get("tool", {}).get("pytest"):
                 deps.setdefault("pytest", rel)
         for compose in sorted(d.glob("docker-compose*.y*ml")) + sorted(d.glob("compose*.y*ml")):
             if COMPOSE_PG_RE.search(_read(compose)):
-                extras.setdefault("postgres", f"{compose.relative_to(repo).as_posix()}: postgres image")
+                extras.setdefault("postgres", f"{safe_name(compose.relative_to(repo).as_posix())}: postgres image")
     return deps
 
 
@@ -205,7 +214,7 @@ def detect(repo_dir):
                          ("express", "node-express", "api")):
         if name in alldeps:
             framework, app_type = fw, at
-            src = alldeps[name]
+            src = safe_name(alldeps[name])
             break
     if framework is None and "react" in node and "vite" in node:
         framework, app_type, src = "react-vite", "web-spa", "package.json"
@@ -226,7 +235,7 @@ def detect(repo_dir):
         hits = sorted(libs & set(alldeps))
         if hits:
             classes.append(cls)
-            evidence.setdefault("data_classes", []).append(f"{alldeps[hits[0]]}: {cls} library {hits}")
+            evidence.setdefault("data_classes", []).append(f"{safe_name(alldeps[hits[0]])}: {cls} library {hits}")
     found = {}
     scans = {"pii": PII_RE, "health": HEALTH_RE, "payments": PAYMENT_RE, "tenant": TENANT_RE}
     for f in iter_source_files(repo):
@@ -241,7 +250,7 @@ def detect(repo_dir):
     for cls in ("pii", "health", "payments"):
         if cls in found:
             classes.append(cls)
-            evidence.setdefault("data_classes", []).append(f"{found[cls][0]}: {cls} field '{found[cls][1]}'")
+            evidence.setdefault("data_classes", []).append(f"{safe_name(found[cls][0])}: {cls} field {safe_name(found[cls][1])}")
     if classes:
         detected["data_classes"] = sorted(set(classes))
 
@@ -253,7 +262,7 @@ def detect(repo_dir):
 
     # tenancy: only 'multi' is detectable
     if "tenant" in found:
-        put("tenancy", "multi", f"{found['tenant'][0]}: tenant key '{found['tenant'][1]}'")
+        put("tenancy", "multi", f"{safe_name(found['tenant'][0])}: tenant key {safe_name(found['tenant'][1])}")
 
     # agent
     agents = []
@@ -277,7 +286,7 @@ def detect(repo_dir):
     locks.sort(key=lambda x: (x[2] not in ("uv", "poetry")) if py_first else (x[2] in ("uv", "poetry")))
     if locks:
         d, lock, mgr = locks[0]
-        put("pkg_mgr", mgr, f"{(d / lock).relative_to(repo).as_posix()} present")
+        put("pkg_mgr", mgr, f"{safe_name((d / lock).relative_to(repo).as_posix())} present")
     else:
         if py:
             put("pkg_mgr", "pip", "requirements*.txt present")
@@ -294,7 +303,8 @@ def detect(repo_dir):
         put("test_cmd", runner, f"pytest dependency or config present; package manager {mgr or 'pip'}")
     elif test_script and test_script.strip() != NPM_DEFAULT_TEST:
         node_mgr = mgr if mgr in ("npm", "pnpm", "yarn") else "npm"
-        put("test_cmd", f"{node_mgr} test", f"package.json: scripts.test = {test_script!r}")
+        put("test_cmd", f"{node_mgr} test", "package.json: scripts.test is set (its text is not shown, L1a; "
+            "the Stop hook runs it, so review it yourself)")
 
     # integrations
     integ = sorted({INTEGRATION_LIBS[d] for d in alldeps if d in INTEGRATION_LIBS})
