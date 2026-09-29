@@ -5,6 +5,7 @@ Writes <repo>/governance.yaml, keeping existing exceptions and mcp_allow.
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -27,7 +28,7 @@ def effective_tier(computed, exceptions):
     return min([computed] + lowered)
 
 
-def build(intake, exceptions=(), mcp_allow=(), hook_python="auto"):
+def build(intake, exceptions=(), mcp_allow=(), hook_python=None):
     """Assemble the governance dict from intake + tier + packs + exceptions (R1)."""
     validate(intake)
     exceptions = list(exceptions)
@@ -43,7 +44,7 @@ def build(intake, exceptions=(), mcp_allow=(), hook_python="auto"):
                           "pins": [{"id": pid, "sha256": h} for pid, h in s["pins"]]}
                   for agent, s in sel.items()},
         "mcp_allow": sorted(set(mcp_allow)),
-        "hook_python": hook_python,
+        "hook_python": hook_python or ("python" if os.name == "nt" else "python3"),
         "exceptions": exceptions,
     }
 
@@ -72,7 +73,7 @@ def main(argv=None):
     mcp = args.mcp_allow.split(",") if args.mcp_allow is not None else old.get("mcp_allow", [])
     try:
         gov = build(intake, old.get("exceptions", []), [m.strip() for m in mcp if m.strip()],
-                    old.get("hook_python", "auto"))
+                    old.get("hook_python"))
     except (PackError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 4

@@ -4,6 +4,8 @@ argument-hint: "[--with-ci] [--mcp-allow server1,server2]"
 disable-model-invocation: true
 ---
 <!-- Plugin docs: https://code.claude.com/docs/en/plugins-reference and https://code.claude.com/docs/en/skills -->
+Python command: run `python3 --version`; if it fails or opens the Microsoft Store (common on Windows), use `python` instead everywhere below.
+
 Install Governor in the current repository. Follow these steps exactly.
 
 1. Check Python and PyYAML: run `python3 -c "import yaml"` (use `python` if `python3` is missing).

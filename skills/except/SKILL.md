@@ -3,6 +3,8 @@ description: Record a Governor exception (disable one rule, or lower the tier) w
 argument-hint: "--rule <RULE-ID> | --tier <N>  --reason \"at least 20 characters\""
 disable-model-invocation: true
 ---
+Python command: run `python3 --version`; if it fails or opens the Microsoft Store (common on Windows), use `python` instead everywhere below.
+
 Record an exception exactly as the user asked: $ARGUMENTS
 
 1. If the user did not give a reason of at least 20 characters, ask for one. Never write the reason yourself.

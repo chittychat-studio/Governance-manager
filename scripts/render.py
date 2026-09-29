@@ -7,6 +7,7 @@ Claude Code outputs: .claude/rules/governor.md, .claude/settings.json (merged, R
 Usage: python scripts/render.py <repo>
 """
 import json
+import os
 import shutil
 import stat
 import sys
@@ -41,12 +42,23 @@ class RenderError(ValueError):
     """Refuse to render (P4 pin mismatch, unreadable settings)."""
 
 
-def hook_command(script, hook_python):
-    """Shell command for a hook. 'auto' tries python3, then python (Windows installs often lack python3)."""
-    target = f'"$CLAUDE_PROJECT_DIR/.claude/hooks/{script}"'
-    if hook_python == "auto":
-        return f"p=python3; $p -c '' 2>/dev/null || p=python; exec \"$p\" {target}"
-    return f"exec {hook_python} {target}"
+def default_python():
+    """Interpreter name for hooks: the one running Governor now ('python' on Windows, else 'python3')."""
+    return "python" if os.name == "nt" else "python3"
+
+
+def hook_handler(script, hook_python, timeout):
+    """Exec-form hook: no shell, so it runs the same under Git Bash or PowerShell on Windows.
+    Claude Code expands ${CLAUDE_PROJECT_DIR} itself (docs: code.claude.com/docs/en/hooks)."""
+    py = default_python() if hook_python in (None, "", "auto") else hook_python
+    return {"type": "command", "command": py,
+            "args": [f"${{CLAUDE_PROJECT_DIR}}/.claude/hooks/{script}"], "timeout": timeout}
+
+
+def is_governor_hook(h):
+    """True for a hook handler Governor rendered (either the old shell form or exec form)."""
+    text = " ".join([h.get("command", "")] + [str(a) for a in h.get("args", [])])
+    return "/.claude/hooks/governor_" in text
 
 
 def verify_pins(gov):
@@ -161,7 +173,7 @@ def merge_settings(repo, deny, ask, hooks, managed_old):
     for event in list(hk):
         groups = []
         for g in hk[event]:
-            inner = [h for h in g.get("hooks", []) if "/.claude/hooks/governor_" not in h.get("command", "")]
+            inner = [h for h in g.get("hooks", []) if not is_governor_hook(h)]
             if inner:
                 groups.append(dict(g, hooks=inner))
         hk[event] = groups
@@ -232,8 +244,7 @@ def _render_claude(repo, gov, rules, disabled, managed_old, managed):
     ask = [a for r in enabled for a in r.get("ask", [])]
     hooks = {}
     for event, (matcher, script, timeout) in HOOK_EVENTS.items():
-        group = {"hooks": [{"type": "command", "command": hook_command(script, gov.get("hook_python", "auto")),
-                            "timeout": timeout}]}
+        group = {"hooks": [hook_handler(script, gov.get("hook_python", "auto"), timeout)]}
         if matcher:
             group = {"matcher": matcher, **group}
         hooks[event] = group
