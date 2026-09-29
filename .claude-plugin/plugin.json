@@ -1,5 +1,4 @@
 {
-  "$schema": "https://code.claude.com/docs/en/plugins/manifest-reference",
   "name": "governor",
   "displayName": "Governor",
   "version": "0.1.0",

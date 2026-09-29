@@ -33,4 +33,5 @@ Before any command that spends credits (verify, nightly, compose testing): print
 - 2026-09-29: Packs signed and hash-pinned (P4). LLM never sees raw repo text (L1).
 - 2026-09-29: Phase 0 review → SPEC v0.3. v1 packs are hash-pinned only; say "signed" only after P4a (P4, P4a). Telemetry out of v1 (NX6). Settings ownership tracked in `.claude/.governor-managed.json`, not file headers (R4).
 - 2026-09-29: Kill criteria K1, K2 adopted.
+- 2026-09-29: Production-readiness review (3 independent reviewers) → hardening: PowerShell coverage, fail-closed logging, lint V8 integrity, detected facts correctable upward only (P7, V8, I3a, T6). Regression cases live in tests/test_adversarial.py and tests/test_batch2.py; add to them, never delete.
 - 2026-09-29: Built in Claude Code cloud sessions, one phase per session, PR per phase (docs/PROMPTS.md). Verify (Phase 4) runs locally, not in cloud.

@@ -24,19 +24,24 @@ Packs exist for **FastAPI + Postgres** only (for example DeckForge); other stack
 
 1. `git switch -c governor-trial` in the target repo, so everything is one `git diff` to review or discard.
 2. In Claude Code in that repo: `/governor:init`, answer the questions it asks.
-3. `python -m pip show pyyaml` must work with the same `python` the hooks use: `governance.yaml` → `hook_python`
-   (`python` on Windows, `python3` elsewhere). Lint warns if that command is not on PATH, because a hook that
-   cannot start does **not** block anything.
+3. Check `governance.yaml` → `hook_python` (the command the hooks run with; init picks the first of
+   `python`/`python3` that really starts Python). Lint **fails** if it does not start, because a hook that
+   cannot start does not block anything. Hooks need only the standard library; PyYAML is for the scripts.
 4. Restart Claude Code in the repo (settings and hooks load at session start), then check the hooks fire
    using throwaway targets only, never real secrets or real folders, in case a hook fails open:
    create `governor-test-dir/` and a `.env.governor-test` holding a fake value, then ask Claude to run
    `rm -rf governor-test-dir` and to read `.env.governor-test`. Both must be refused citing a Governor rule,
    the folder must still exist, and `.claude/governor/governor.log` must show `deny P6-rm-rf` and
-   `deny P6-secret-read`. Delete both test files afterwards yourself.
+   `deny P6-secret-read`. On Windows, repeat with PowerShell wording: ask Claude to run
+   `Remove-Item -Recurse -Force governor-test-dir` and `Get-Content .env.governor-test`. Both must be refused
+   too. Delete both test files afterwards yourself.
 5. Undo: `git switch -` and delete the branch. Your original settings are also saved in
    `.claude/settings.json.governor-backup`.
 
-Hooks run in exec form (no shell), so they behave the same whether Claude Code uses Git Bash or PowerShell.
+Hooks are launched in exec form (no shell), and their shell rules cover both Claude Code's Bash tool and its
+PowerShell tool (the Windows default when Git Bash is absent). Shell rules match command text: they stop the
+commands an agent normally writes, not a determined attacker (variables, interpreters opening files). The
+evidence report says so; it is not a sandbox.
 
 ## Use
 
