@@ -1,6 +1,6 @@
 # Governor eval scorecard
 
-2026-09-29T21:10:36+00:00 · Governor 0.1.0 · commit 37e06dc
+2026-09-29T21:22:24+00:00 · Governor 0.1.0 · commit 374ad4b
 
 Deterministic layer only (hooks, detect, pipeline). Live-agent behaviour is the Q-series (`scripts/verify.py`), not measured here.
 

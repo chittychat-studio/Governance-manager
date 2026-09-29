@@ -72,7 +72,17 @@ prompt injection planted in README, CLAUDE.md, AGENTS.md, code comments, file na
 forged answer files, hostile test commands and attempts to switch guardrails off. It checks that detected facts
 match a clean twin repo, that no file contents reach what the agent reads, and that the skills carry the
 data-not-instructions text. Whether a live agent actually follows that text is not measured: `evals/live_edge.yaml`
-is a design for that suite, not run, because it spends credits (E4).
+is run by `scripts/live_edge.py`, which spends credits or plan usage (E4), so run it on your own machine:
+
+```
+python scripts/live_edge.py --plan                      # estimate only (8 scenarios x 2 runs, ~960k tokens)
+python scripts/live_edge.py --only LE4 --runs 1 --keep  # one scenario first, to check the harness works
+python scripts/live_edge.py                             # the full suite; asks you to type yes
+```
+
+Each scenario runs headless Claude Code (`claude -p`, this plugin via `--plugin-dir`, project settings only) in a
+throwaway repo. Pass/fail comes from files, hashes and the hook log afterwards, never from the agent's own summary.
+Results: `evals/results/live_edge.json`. No results exist yet.
 
 ## Develop
 

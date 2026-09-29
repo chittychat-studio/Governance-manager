@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import governance  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-EXCLUDED_SCRIPTS = {"verify.py", "c1_budget.py", "eval.py"}  # credit-spending (E4) or dev-only; never in client CI
+EXCLUDED_SCRIPTS = {"verify.py", "c1_budget.py", "eval.py", "live_edge.py"}  # credit-spending (E4) or dev-only; never in client CI
 WORKFLOW = ".github/workflows/governor.yml"
 
 
