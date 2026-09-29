@@ -49,6 +49,8 @@ def parse_answer(field, raw):
     kind, _ = QUESTION_BANK[field]
     allowed = enum_for(field)
     if isinstance(raw, list):
+        if not kind.startswith("many") and len(raw) != 1:
+            raise IntakeError(f"{field}: expected one value, got a list of {len(raw)} (I1a)")
         items = [str(x).strip() for x in raw]
     else:
         items = [x.strip() for x in str(raw).split(",")] if kind.startswith("many") else [str(raw).strip()]
@@ -97,6 +99,11 @@ def apply_corrections(detected, corrections):
                 raise IntakeError(f"refused: removing detected data class(es) {dropped} would lower the tier. "
                                   "If detection is wrong, keep them and record a tier exception with "
                                   "scripts/exceptions.py --tier N --reason ... (T6, X4)")
+        if field == "agent":
+            dropped = sorted(set(old) - set(value))
+            if dropped:
+                raise IntakeError(f"refused: removing detected agent(s) {dropped} would switch enforcement off "
+                                  "for them (I3a)")
         if field in RISK_ORDER and RISK_ORDER[field].index(value) < RISK_ORDER[field].index(old):
             raise IntakeError(f"refused: changing detected {field} {old!r} to {value!r} would lower the tier. "
                               "Record a tier exception instead (T6, X4)")

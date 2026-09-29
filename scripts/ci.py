@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import governance  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-EXCLUDED_SCRIPTS = {"verify.py", "c1_budget.py"}  # spend credits (E4); never in client CI (D4)
+EXCLUDED_SCRIPTS = {"verify.py", "c1_budget.py", "eval.py"}  # credit-spending (E4) or dev-only; never in client CI
 WORKFLOW = ".github/workflows/governor.yml"
 
 
@@ -38,8 +38,9 @@ def install(repo):
     for src in sorted((ROOT / "scripts").glob("*.py")):
         if src.name not in EXCLUDED_SCRIPTS:
             shutil.copy2(src, dst / "scripts" / src.name)
-    shutil.copytree(ROOT / "packs", dst / "packs")
-    shutil.copytree(ROOT / "templates" / "hooks", dst / "templates" / "hooks")
+    ignore = shutil.ignore_patterns("__pycache__", "*.pyc")
+    shutil.copytree(ROOT / "packs", dst / "packs", ignore=ignore)
+    shutil.copytree(ROOT / "templates" / "hooks", dst / "templates" / "hooks", ignore=ignore)
     for name in ("tiers.yaml", "intake.schema.json"):
         shutil.copy2(ROOT / name, dst / name)
     (dst / "VERSION").write_text(governance.GOVERNOR_VERSION + "\n", encoding="utf-8")

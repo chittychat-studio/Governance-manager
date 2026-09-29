@@ -75,9 +75,15 @@ def main(argv=None):
     mcp = args.mcp_allow.split(",") if args.mcp_allow is not None else old.get("mcp_allow", [])
     try:
         gov = build(intake, old.get("exceptions", []), [m.strip() for m in mcp if m.strip()],
-                    old.get("hook_python"))
+                    old.get("hook_python"), old.get("corrections", []))
     except (PackError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
+        return 4
+    if old and gov["tier"]["computed"] < old["tier"]["computed"] and not any(
+            e.get("kind") == "tier" and e["tier"] <= gov["tier"]["computed"] for e in old.get("exceptions", [])):
+        print(f"refused: this intake lowers the computed tier from {old['tier']['computed']} to "
+              f"{gov['tier']['computed']}; record an exception with scripts/exceptions.py first (T6, X4)",
+              file=sys.stderr)
         return 4
     write(args.repo, gov)
     print(f"governance.yaml written: tier {gov['tier']['effective']} "

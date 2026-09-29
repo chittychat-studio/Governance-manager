@@ -28,9 +28,9 @@ def test_codex_is_advisory_only_in_coverage_and_report(tmp_path):
     """R6: per-agent coverage is honest: Codex gets instructions only."""
     repo = install(tmp_path / "r", BOTH)
     cov = (repo / render.COVERAGE_MD).read_text()
-    assert "## codex" in cov and "Enforced: 0 · Advisory: 12 · Disabled: 0" in cov
+    assert "## codex" in cov and "Enforced: 0 · Advisory: 13 · Disabled: 0" in cov
     text = report.build(repo, verify_path=tmp_path / "none")
-    assert "| codex | 0 | 12 | 0 |" in text and "| claude-code | 15 | 2 | 0 |" in text
+    assert "| codex | 0 | 13 | 0 |" in text and "| claude-code | 16 | 2 | 0 |" in text
 
 
 def test_user_agents_md_kept_and_block_replaced(tmp_path):

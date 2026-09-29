@@ -20,16 +20,16 @@ SECRET_PATTERNS = {
     "anthropic-key": r"\bsk-ant-[0-9A-Za-z_-]{20,}\b",
     "openai-key": r"\bsk-(proj-)?[0-9A-Za-z_-]{32,}\b",
     "google-api-key": r"\bAIza[0-9A-Za-z_-]{35}\b",
-    "url-credentials": r"\b[a-z][a-z0-9+.-]*://[^:/\s'\"@]+:[^@\s'\"/]{3,}@[^\s'\"]+",
+    "url-credentials": r"\b[a-z][a-z0-9+.-]*://[^:/\s'\"@]*:[^@\s'\"/]{3,}@(?!(localhost|127\.0\.0\.1)\b)[^\s'\"]+",
     # KEY = "value" / KEY: "value" where the name says secret.
     "assigned-secret": r"(?i)\b[A-Za-z0-9_.-]*(password|passwd|pwd|secret|api_?key|access_?key|token|private_?key)"
-                       r"[A-Za-z0-9_]*\s*[:=]\s*['\"]([^'\"\s]{12,})['\"]",
+                       r"[A-Za-z0-9_]*['\"]?\s*[:=]\s*['\"]([^'\"\s]{12,})['\"]",
     # KEY=value (.env / YAML style, unquoted): must contain a digit and must not be a call or attribute.
     "assigned-secret-env": r"(?i)\b[A-Za-z0-9_.-]*(password|passwd|pwd|secret|api_?key|access_?key|token|private_?key)"
                            r"[A-Za-z0-9_]*\s*[:=]\s*(?=[^\s'\"#]*\d)[^\s'\"#().]{12,}(?![\w(.])",
 }
 # Values that are clearly placeholders or read from the environment, not secrets.
-PLACEHOLDER = re.compile(r"(?i)(example|changeme|change-me|placeholder|dummy|your[_-]|xxx|<[^>]*>|\$\{|\$[A-Z_]|"
+PLACEHOLDER = re.compile(r"(?i)(example|changeme|change-me|placeholder|dummy|your[_-]|xxx|<[^>]*>|\$\{|\$[A-Z_]|\{[^}]*\}|"
                          r"os\.environ|getenv|environ\[|settings\.|config\.|process\.env|test-token|fake|redacted|\*{4})")
 
 
@@ -58,7 +58,7 @@ def main():
             resp = event.get("tool_response")
             failed = event.get("hook_event_name") == "PostToolUseFailure" or \
                 (isinstance(resp, dict) and (resp.get("exit_code") not in (None, 0) or resp.get("is_error")))
-            key = gc.fail_key(str(ti.get("command", "")))
+            key = gc.fail_key(str(ti.get("command", "")), tool)
             fails = gc.read_state(event, "fails", {})
             fails = fails if isinstance(fails, dict) else {}
             fails[key] = fails.get(key, 0) + 1 if failed else 0

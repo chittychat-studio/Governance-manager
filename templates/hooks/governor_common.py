@@ -23,8 +23,12 @@ WRAPPERS = {
     "nice": {"-n", "--adjustment"}, "ionice": {"-c", "-n", "-p"}, "stdbuf": {"-i", "-o", "-e"},
     "timeout": {"-s", "-k", "--signal", "--kill-after"},
     "xargs": {"-I", "-n", "-P", "-L", "-d", "-a", "-E", "-s", "--max-args", "--max-procs", "--replace"},
-    "chroot": set(), "unbuffer": set(), "script": {"-c"},
+    "chroot": set(), "unbuffer": set(), "script": {"-c"}, "busybox": set(), "setsid": set(), "flock": {"-w", "-E"},
+    "watch": {"-n", "-d", "--interval"}, "stdbuf": {"-i", "-o", "-e"}, "caffeinate": set(), "doas": {"-u", "-C"},
 }
+# Wrappers whose first positional argument is not the command (flock LOCKFILE cmd, chroot DIR cmd).
+POSITIONAL_WRAPPERS = {"flock": 1, "chroot": 1}
+EVALS = {"eval", "iex", "invoke-expression"}
 KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "!", "function", "{", "}", "(", ")", "time"}
 SHELLS = {"sh", "bash", "zsh", "dash", "ksh", "fish", "ash", "busybox"}
 PWSH = {"pwsh", "powershell", "cmd"}
@@ -103,11 +107,53 @@ def _program(tok):
 
 
 def _split_compound(cmd):
-    # Drop redirections that contain '&' before splitting on it (2>&1, &>file).
-    cmd = re.sub(r"\d*>&\d*-?|&>>?", " ", cmd)
-    # Over-splitting (also inside quotes) only makes matching stricter, never looser.
-    parts = re.split(r"&&|\|\||;|\||&|\n|\r|`|\$\(|<\(|>\(|\(|\)|\{|\}", cmd)
+    """Split on shell operators outside quotes. Inside double quotes only command substitution ($(, `)
+    splits, because it still runs there; single-quoted text is never split."""
+    cmd = re.sub(r"\d*>&\d*-?|&>>?", " ", cmd)  # redirections containing '&' (2>&1, &>file)
+    parts, cur, quote, i = [], [], None, 0
+    ops = ("&&", "||", "$(", "<(", ">(", ";", "|", "&", "\n", "\r", "`", "(", ")", "{", "}")
+    while i < len(cmd):
+        ch = cmd[i]
+        if quote == "'":
+            if ch == "'":
+                quote = None
+            cur.append(ch)
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < len(cmd) and quote != "'":
+            cur.append(cmd[i:i + 2])
+            i += 2
+            continue
+        if ch in ("'", '"') and (quote is None or quote == ch):
+            quote = None if quote else ch
+            cur.append(ch)
+            i += 1
+            continue
+        op = next((o for o in ops if cmd.startswith(o, i)), None)
+        if op and (quote is None or op in ("$(", "`")):
+            parts.append("".join(cur))
+            cur = []
+            i += len(op)
+            continue
+        cur.append(ch)
+        i += 1
+    parts.append("".join(cur))
     return [p.strip() for p in parts if p.strip()]
+
+
+def expand_braces(s, limit=16):
+    """Expand simple {a,b} groups (bash brace expansion) so `.{env,x}` is seen as `.env`."""
+    out = [s]
+    for _ in range(4):
+        nxt = []
+        for x in out:
+            m = re.search(r"\{([^{}\s]*,[^{}\s]*)\}", x)
+            if not m:
+                nxt.append(x)
+                continue
+            nxt += [x[:m.start()] + alt + x[m.end():] for alt in m.group(1).split(",")]
+        out = nxt[:limit]
+    return out
 
 
 def _strip_prefix(toks):
@@ -126,6 +172,9 @@ def _strip_prefix(toks):
                 flag = toks.pop(0)
                 if flag in argflags and toks:
                     toks.pop(0)
+            for _ in range(POSITIONAL_WRAPPERS.get(last, 0)):
+                if toks:
+                    toks.pop(0)
             changed = True
     return toks, last
 
@@ -133,6 +182,16 @@ def _strip_prefix(toks):
 def _inner_script(toks):
     """If toks run a shell with an inline script (bash -lc '...', pwsh -Command ...), return it."""
     prog = _program(toks[0]).lower()
+    if prog in EVALS:
+        return " ".join(toks[1:])
+    if "<<<" in toks[1:] and (prog in SHELLS or prog in PWSH or prog.startswith("python")):
+        i = toks.index("<<<")
+        return toks[i + 1] if i + 1 < len(toks) else ""
+    if prog in ("su", "runuser"):
+        for i, t in enumerate(toks[1:], 1):
+            if t in ("-c", "--command") and i + 1 < len(toks):
+                return toks[i + 1]
+        return None
     if prog in SHELLS:
         for i, t in enumerate(toks[1:], 1):
             if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", t):
@@ -186,8 +245,9 @@ def _runner_inner(toks):
     return None
 
 
-def _normalise_one(seg, depth):
-    seg = seg.replace("\\", "/")
+def _normalise_one(seg, depth, tool="Bash"):
+    if tool == "PowerShell":
+        seg = seg.replace("\\", "/")   # Windows path separators; PowerShell's escape char is the backtick
     try:
         toks = shlex.split(seg, posix=True)
     except ValueError:
@@ -199,12 +259,12 @@ def _normalise_one(seg, depth):
     if depth < 4:
         inner = _inner_script(toks)
         if inner is not None:
-            return [" ".join(toks)] + normalise(inner, depth + 1)
+            return [" ".join(toks)] + normalise(inner, depth + 1, tool)
     out = []
     if depth < 4:
         inner = _runner_inner(toks)
         if inner:
-            out += normalise(" ".join(shlex.quote(x) for x in inner), depth + 1)
+            out += normalise(" ".join(shlex.quote(x) for x in inner), depth + 1, tool)
     if toks[0] == "git":
         rest, i = [], 1
         while i < len(toks) and toks[i].startswith("-"):
@@ -221,22 +281,38 @@ def _normalise_one(seg, depth):
                     if x in (";", "+", "/;"):
                         break
                     inner.append(x)
-                out += normalise(" ".join(shlex.quote(x) for x in inner), depth + 1)
+                out += normalise(" ".join(shlex.quote(x) for x in inner), depth + 1, tool)
     return [" ".join(toks)] + out
 
 
-def normalise(cmd, depth=0):
+def normalise(cmd, depth=0, tool="Bash"):
     """Normalise a shell command into simple segments (P7): wrappers, keywords, paths, `bash -c`,
-    `pwsh -Command`, `find -exec`, `git -C` are unwrapped. The raw command is included too."""
-    out = [] if depth else [" ".join(str(cmd).split())]
-    for seg in _split_compound(str(cmd)):
-        out.extend(_normalise_one(seg, depth))
+    `pwsh -Command`, `eval`, `find -exec`, runners, containers and `git -C` are unwrapped; brace groups are
+    expanded; text piped into a bare shell is treated as a script. The raw command is included too."""
+    cmd = str(cmd)
+    variants = expand_braces(cmd) if depth == 0 else [cmd]
+    out = [" ".join(v.split()) for v in variants] if depth == 0 else []
+    for v in variants:
+        segs = _split_compound(v)
+        for seg in segs:
+            out.extend(_normalise_one(seg, depth, tool))
+        # `echo "rm -rf x" | sh`: a bare shell reading stdin runs what the other segments print.
+        if depth < 3 and "|" in v and any(_is_bare_shell(x) for x in segs):
+            for seg in segs:
+                toks = seg.split(None, 1)
+                if toks and _program(toks[0]).lower() in ("echo", "printf", "print", "write-output") and len(toks) > 1:
+                    out.extend(normalise(toks[1].strip("'\""), depth + 1, tool))
     return [s for s in out if s]
 
 
-def fail_key(cmd):
+def _is_bare_shell(seg):
+    toks = seg.split()
+    return bool(toks) and _program(toks[0]).lower() in SHELLS | PWSH and all(t.startswith("-") for t in toks[1:])
+
+
+def fail_key(cmd, tool="Bash"):
     """Stable key for 'the same command' in the P8 repeat-failure counter."""
-    return " && ".join(normalise(cmd)[1:])
+    return " && ".join(normalise(cmd, tool=tool)[1:])
 
 
 def _fold(s):
@@ -249,7 +325,9 @@ def _variants(path, root):
     home = _fold(os.path.expanduser("~"))
     variants = {p, p.rsplit("/", 1)[-1]}
     try:
-        rel = Path(str(path)).resolve().relative_to(Path(root).resolve()).as_posix()
+        pp = Path(str(path))
+        pp = pp if pp.is_absolute() or str(path).startswith("~") else Path(root) / pp
+        rel = pp.resolve().relative_to(Path(root).resolve()).as_posix()
         variants.add(_fold(rel))
     except (ValueError, OSError):
         pass
@@ -291,3 +369,118 @@ def tool_paths(tool_input):
         if isinstance(v, str) and v:
             out.append(v)
     return out
+
+
+# ---- P9 guardrail guard: shell commands that could change Governor's own files ----------------------------
+GUARD_TARGETS = [".claude/settings.json", ".claude/settings.local.json", ".claude/hooks/governor_pretool.py",
+                 ".claude/hooks/governor_config.json", ".claude/.governor-managed.json", ".claude/governor/governor.log",
+                 ".claude/governor/state/s.json", "governance.yaml"]
+GUARD_DIRS = [".claude/hooks/", ".claude/governor/state/"]
+GUARD_BASENAMES = ["governance.yaml", ".governor-managed.json", "governor_config.json", "governor_*.py"]
+GOVERNOR_ADMIN_SCRIPTS = {"exceptions.py", "governance.py"}   # human-only (X1); init/render cannot lower a tier
+READ_ONLY = {"cat", "less", "more", "head", "tail", "grep", "egrep", "fgrep", "rg", "ls", "dir", "wc", "diff", "stat",
+             "file", "type", "jq", "bat", "get-content", "gc", "select-string", "sls", "test", "[", "realpath",
+             "readlink", "sha256sum", "md5sum", "shasum", "get-filehash", "get-item", "gi", "get-childitem", "gci",
+             "code", "vim", "view", "nano", "mkdir", "md"}
+READ_ONLY_GIT = {"diff", "status", "log", "show", "blame", "add", "commit", "ls-files", "grep", "shortlog"}
+CD = {"cd", "pushd", "set-location", "sl", "chdir", "popd"}
+
+
+def _guard_path(tok, cwd):
+    """Repo-relative, normalised form of a path-like token (quotes, ./, --opt=, backslashes removed)."""
+    t = tok.strip("'\"")
+    if "=" in t and t.startswith("-"):
+        t = t.split("=", 1)[1]
+    t = t.replace("\\", "/")
+    low = t.lower()
+    i = low.find("/.claude")
+    if i >= 0 and not low.startswith(".claude"):
+        t = t[i + 1:]
+    elif cwd and not t.startswith(("/", "~", "-")):
+        t = f"{cwd}/{t}"
+    while t.startswith("./"):
+        t = t[2:]
+    return t
+
+
+EMBEDDED_PATH = re.compile(r"[\w./~*?\\-]*\.claude[/\\][\w./*?\\-]*|[\w./\\-]*governance\.yaml|"
+                           r"[\w./\\-]*governor_[\w*]*\.(py|json)|[\w./\\-]*\.governor-managed\.json", re.I)
+
+
+def _guarded(tok, cwd):
+    if re.search(r"[(),;'\"\s]", tok.strip("'\"")):   # code or a sentence: look for paths inside it
+        return any(_guarded(m.group(0), "") for m in EMBEDDED_PATH.finditer(tok))
+    t = _guard_path(tok, cwd)
+    if not t or t.startswith("-"):
+        return False
+    low = t.lower().rstrip("/")
+    if re.search(r"[*?\[]", low):
+        # A glob counts only if it names Governor's files, or is a dot-glob that also matches `.claude`
+        # (`rm -r .*`). Generic globs like `*.py` do not.
+        first = low.split("/", 1)[0]
+        if not (re.search(r"clau|governance|governor", low) or (first.startswith(".") and fnmatch.fnmatch(".claude", first))):
+            return False
+    base = low.rsplit("/", 1)[-1]
+    if any(fnmatch.fnmatch(base, g) for g in GUARD_BASENAMES):
+        return True
+    if any((low + "/").startswith(d) for d in GUARD_DIRS):
+        return True
+    for target in GUARD_TARGETS:
+        if low == target or fnmatch.fnmatch(target, low) or target.startswith(low + "/"):
+            return True
+    return False
+
+
+def _is_read_only(toks):
+    prog = _program(toks[0]).lower()
+    if prog in READ_ONLY:
+        return True
+    if prog == "git":
+        rest = [t for t in toks[1:] if not t.startswith("-")]
+        return bool(rest) and rest[0] in READ_ONLY_GIT and not any(t.startswith("--output") for t in toks)
+    if prog.startswith("python") and toks[1:3] == ["-m", "json.tool"]:
+        return True
+    if prog == "find":
+        return not any(t in ("-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprintf", "-fls")
+                       for t in toks)
+    return False
+
+
+def guard_hit(cmd, tool="Bash"):
+    """True if a shell command could modify Governor's guardrails or run its admin scripts (P9)."""
+    for variant in expand_braces(str(cmd)):
+        cwd = ""
+        for seg in _split_compound(variant):
+            if tool == "PowerShell":
+                seg = seg.replace("\\", "/")
+            try:
+                toks = shlex.split(seg, posix=True)
+            except ValueError:
+                toks = seg.split()
+            toks, _ = _strip_prefix(toks)
+            if not toks:
+                continue
+            prog = _program(toks[0]).lower()
+            if prog in CD:
+                target = next((t for t in toks[1:] if not t.startswith("-")), "")
+                new = _guard_path(target, cwd).rstrip("/") if target else ""
+                cwd = new if ".claude" in new.lower() else ""
+                continue
+            if any(os.path.basename(t.replace("\\", "/")) in GOVERNOR_ADMIN_SCRIPTS for t in toks):
+                return True
+            # redirections write whatever the program
+            for i, t in enumerate(toks):
+                if t in (">", ">>", "1>", "2>") and i + 1 < len(toks) and _guarded(toks[i + 1], cwd):
+                    return True
+                if re.match(r"^\d?>{1,2}\S", t) and _guarded(t.lstrip("0123456789>"), cwd):
+                    return True
+            if _is_read_only(toks):
+                continue
+            args = [t for t in toks[1:] if t not in (">", ">>")]
+            if prog in ("cp", "copy", "copy-item", "cpi", "rsync", "scp"):
+                args = [t for t in args if not t.startswith("-")][-1:]   # only the destination is written
+            if any(_guarded(t, cwd) for t in args):
+                return True
+            if cwd and any((cwd.lower() + "/").startswith(d) for d in GUARD_DIRS):
+                return True   # any writing command run from inside .claude/hooks or Governor state
+    return False

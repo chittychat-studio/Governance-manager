@@ -20,6 +20,7 @@ Before any command that spends credits (verify, nightly, compose testing): print
 - `python scripts/verify.py` — Q-series, spends credits, approval required
 - `python scripts/init.py <repo> --questions` then `--answers a.json` — full install pipeline
 - `python scripts/sign_pack.py` — re-pin packs after editing any pack YAML (P4)
+- `python scripts/eval.py` — eval gates (evals/thresholds.yaml); must pass before any PR
 
 ## Do not
 - Feed raw repo text to any subagent (L1).

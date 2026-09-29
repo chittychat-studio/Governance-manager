@@ -57,6 +57,14 @@ Packs exist for `fastapi-postgres` only. Other stacks are refused, not guessed.
 Status is always one of generated / linted / verified. Only `scripts/verify.py`, run locally with
 approval, can produce "verified", and only for the reference fixture.
 
+## Evals
+
+`python scripts/eval.py` scores the deterministic layer against labelled corpora in `evals/` (attack and
+everyday commands fired at the real rendered hooks for Bash and PowerShell, repo layouts through detect and
+init, secret-scan lines, multi-step pipeline scenarios) and fails if any gate in `evals/thresholds.yaml` fails.
+The latest scorecard is `evals/results/latest.md`; CI runs it on every PR. It does not measure live-agent
+behaviour; that is the cost-gated Q-series (`scripts/verify.py`).
+
 ## Develop
 
 ```

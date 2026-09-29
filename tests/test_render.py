@@ -76,7 +76,7 @@ def test_generated_headers(installed):
 def test_coverage_table(installed):
     """R6."""
     cov = (installed / render.COVERAGE_MD).read_text()
-    assert "Enforced: 15 · Advisory: 2 · Disabled: 0" in cov
+    assert "Enforced: 16 · Advisory: 2 · Disabled: 0" in cov
     assert "not a compliance certificate" in cov
 
 

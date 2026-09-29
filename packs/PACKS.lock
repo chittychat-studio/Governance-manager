@@ -1,8 +1,8 @@
 {
-  "tier1/fastapi-postgres/claude-code": "6544c8ddd2e11412048de86256db5bb70c704162ae27340590a188947bd5a6b5",
+  "tier1/fastapi-postgres/claude-code": "65920f2afc472a0aebd4968cdf721b09d99d2ec1b23dae3b36326437aaef16d5",
   "tier1/fastapi-postgres/codex": "13a88c1e13fcec9ae967062c9f2e66f30d0ebce3fd91bcd311467b95758017ee",
-  "tier2/fastapi-postgres/claude-code": "f794907cde9763fbe0ea1469ec5aefcd2856f1363bee50cb9ea1e95c06dbba26",
+  "tier2/fastapi-postgres/claude-code": "1c98076e66ab308dfddfb10bef5778d6a34ae4fcdfa08bd85020a1ba548775a4",
   "tier2/fastapi-postgres/codex": "05e9c288a193944fe0c9b69cfe37682fc8475be25c04a93698c8c0218c687840",
-  "tier3/fastapi-postgres/claude-code": "ea7a661bb7f53fca0bc40062633ee7dabf8ca3ef747fa7b4e1a196fa23261bb3",
+  "tier3/fastapi-postgres/claude-code": "7ca2d07fdec6e67326c87e0075c49998d18517d2604001d888cbcb8bde1bf40e",
   "tier3/fastapi-postgres/codex": "aa01fef0a8de2edb529cbf0ca73d3acb250538226c52f098831a37d805668cd8"
 }

@@ -1,6 +1,6 @@
 # Tier 3 = tier 2 + P10 (SPEC P3, P10).
 id: tier3/fastapi-postgres/claude-code
-version: 2
+version: 3
 tier: 3
 stack: fastapi-postgres
 agent: claude-code
@@ -16,12 +16,14 @@ rules:
           'Bash(pnpm add *)', 'Bash(yarn add *)']
     hook:
       bash_ask:
-        - '^(python[\d.]*\s+(-\S+\s+)*-m\s+)?pip[\d.]*\b.*\binstall\b'
-        - '^py\s+(-\S+\s+)*-m\s+pip\b.*\binstall\b'
-        - '^(poetry|uv|pdm|hatch|pipenv|rye)\b.*\s(add|install|sync)\b'
-        - '^(npm|pnpm|bun)\b.*\s(install|i|add|ci)\b'
-        - '^yarn\b.*\s(add|install)\b'
-        - '^(pipx|conda|mamba|gem|cargo|go)\b.*\s(install|add|get)\b'
+        - '^(python[\d.]*\s+(-\S+\s+)*-m\s+)?pip[\d.]*(\s+-\S+)*\s+install\b'
+        - '^py\s+(-\S+\s+)*-m\s+pip(\s+-\S+)*\s+install\b'
+        - '^(poetry|uv|pdm|hatch|pipenv|rye)(\s+-\S+)*\s+(add|install|sync)\b'
+        - '^uv(\s+-\S+)*\s+pip\s+install\b'
+        - '^(npm|pnpm|bun)(\s+-\S+)*\s+(install|i|add|ci)\b'
+        - '^yarn(\s+-\S+)*\s+(add|install)\b'
+        - '^(pipx|conda|mamba|gem|cargo)(\s+-\S+)*\s+(install|add)\b'
+        - '^go(\s+-\S+)*\s+(install|get)\b'
         - '^(install-module|install-package)\b'
   - id: P10-webfetch-ask
     spec: P10
@@ -38,7 +40,8 @@ rules:
     agents: [claude-code, codex]
     hook:
       bash_ask:
-        - '^(env|printenv|set|export\s+-p|declare\s+-[a-z]*[xp][a-z]*|typeset\s+-x|compgen\s+-v)\s*$'
+        - '^(env|printenv|set|compgen\s+-v)\s*$'
+        - '^(export|declare|typeset)(\s+-[a-z]*)?\s*$'
         - '^printenv\b'
         - '/proc/[^\s]*/environ'
         - '^(get-childitem|gci|dir|ls|get-item)\s+env:'

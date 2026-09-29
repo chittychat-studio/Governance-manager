@@ -1,4 +1,4 @@
-"""Lint rendered Governor output (SPEC V1-V8, R3, R4, R6).
+"""Lint rendered Governor output (SPEC V1-V9, R3, R4, R6).
 
 Usage: python scripts/lint.py <repo>   -> exit 0 clean, 1 on any failure (V7)
 """
@@ -41,6 +41,7 @@ def lint(repo):
     except render.RenderError as exc:
         fails.append(f"V2: {exc}")
         return fails, warns
+    _lint_consistency(gov, fails)
     managed_p = repo / render.MANAGED
     if not managed_p.exists():
         return fails + ["V1: rendered files missing (run render.py)"], warns
@@ -55,8 +56,82 @@ def lint(repo):
     return fails, warns
 
 
+def _lint_consistency(gov, fails):
+    """V9: governance.yaml agrees with itself: tier recomputed from intake, exceptions well-formed (X1, X4),
+    effective tier and pack ids follow from them (T6, P1). Catches a hand-lowered tier or a fake exception."""
+    import datetime
+    from intake import IntakeError, validate
+    from packs import resolve
+    from select_pack import pack_id
+    from tier import compute_tier
+    try:
+        validate(dict(gov["intake"]))
+        computed, _ = compute_tier(gov["intake"])
+    except (IntakeError, KeyError, TypeError) as exc:
+        fails.append(f"V9: intake invalid: {exc}")
+        return
+    if gov["tier"].get("computed") != computed:
+        fails.append(f"V9: tier.computed is {gov['tier'].get('computed')} but intake gives {computed}")
+    valid_tiers = []
+    known = set()
+    for agent in gov.get("packs", {}):
+        try:
+            known |= {r["id"] for r in resolve(pack_id(computed, gov["intake"]["stack"], agent))[0]}
+        except PackError:
+            pass
+    for i, e in enumerate(gov.get("exceptions", [])):
+        problems = []
+        if len(str(e.get("reason", "")).strip()) < 20:
+            problems.append("reason under 20 characters (X1)")
+        try:
+            datetime.date.fromisoformat(str(e.get("date")))
+        except ValueError:
+            problems.append("no valid date (X1)")
+        if not str(e.get("by", "")).strip():
+            problems.append("no recorded user (X1)")
+        if e.get("kind") == "tier":
+            if not isinstance(e.get("tier"), int) or not 1 <= e["tier"] <= 3:
+                problems.append("tier exception needs a tier between 1 and 3 (X4)")
+            elif not problems:
+                valid_tiers.append(e["tier"])
+        elif e.get("kind") == "rule":
+            if e.get("rule") not in known:
+                problems.append(f"rule {e.get('rule')} is not in the selected packs")
+        else:
+            problems.append("unknown kind")
+        if problems:
+            fails.append(f"V9: exception #{i + 1}: {'; '.join(problems)}")
+    effective = min([computed] + valid_tiers)
+    if gov["tier"].get("effective") != effective:
+        fails.append(f"V9: tier.effective is {gov['tier'].get('effective')} but intake + valid exceptions give "
+                     f"{effective}")
+    agents = set(gov["intake"].get("agent", []))
+    if set(gov.get("packs", {})) != agents:
+        fails.append(f"V9: packs are for {sorted(gov.get('packs', {}))} but intake agents are {sorted(agents)}")
+    for agent, p in gov.get("packs", {}).items():
+        want = pack_id(effective, gov["intake"]["stack"], agent)
+        if p.get("pack_id") != want:
+            fails.append(f"V9: {agent} pack is {p.get('pack_id')} but tier {effective} needs {want}")
+
+
 def _norm(text):
     return text.replace("\r\n", "\n")
+
+
+def _governor_hooks(repo):
+    """{event: sorted [(matcher, handler JSON)]} for Governor's own hook handlers in settings.json."""
+    try:
+        data = json.loads((repo / ".claude/settings.json").read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    out = {}
+    hooks = data.get("hooks") if isinstance(data, dict) and isinstance(data.get("hooks"), dict) else {}
+    for event, groups in hooks.items():
+        for g in groups if isinstance(groups, list) else []:
+            for h in g.get("hooks", []) if isinstance(g, dict) else []:
+                if isinstance(h, dict) and render.is_governor_hook(h):
+                    out.setdefault(event, []).append((g.get("matcher"), json.dumps(h, sort_keys=True)))
+    return {k: sorted(v, key=str) for k, v in out.items()}
 
 
 def _agents_block(text):
@@ -86,12 +161,20 @@ def _lint_integrity(repo, managed, fails):
                 fails.append(f"V8: {rel} missing; re-run render")
             elif not want.exists() or _norm(want.read_text(encoding="utf-8")) != _norm(have.read_text(encoding="utf-8")):
                 fails.append(f"V8: {rel} differs from a fresh render (edited or stale); re-run render")
-        if (tmp / render.AGENTS_MD).exists():
-            want = _agents_block((tmp / render.AGENTS_MD).read_text(encoding="utf-8"))
-            have_p = repo / render.AGENTS_MD
-            have = _agents_block(have_p.read_text(encoding="utf-8")) if have_p.exists() else None
-            if want is not None and _norm(want) != _norm(have or ""):
-                fails.append("V8: AGENTS.md Governor block differs from a fresh render")
+        if (tmp / ".claude/settings.json").exists():
+            want_h, have_h = _governor_hooks(tmp), _governor_hooks(repo)
+            for event in sorted(set(want_h) | set(have_h)):
+                if want_h.get(event) != have_h.get(event):
+                    fails.append(f"V8: settings.json {event} Governor hook entry differs from a fresh render "
+                                 f"(matcher, command, args or timeout changed)")
+        for name in (render.AGENTS_MD, "CLAUDE.md"):
+            want_p, have_p = tmp / name, repo / name
+            want = _agents_block(want_p.read_text(encoding="utf-8")) if want_p.exists() else None
+            if want is None:
+                continue
+            have = _agents_block(have_p.read_text(encoding="utf-8", errors="replace")) if have_p.exists() else None
+            if _norm(want) != _norm(have or ""):
+                fails.append(f"V8: {name} Governor block differs from a fresh render")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -151,8 +234,9 @@ def _lint_claude(repo, gov, managed, fails, warns):
     cm_lines = len(claude_md.read_text(encoding="utf-8").splitlines()) if claude_md.exists() else 0
     user_rules = sum(len(t.splitlines()) for p, t in _unscoped_rules(repo) if not t.startswith(render.MD_HEADER))
     if managed.get("claude_md_owned"):
-        owned += cm_lines
-        user = user_rules
+        block = _agents_block(claude_md.read_text(encoding="utf-8", errors="replace")) or ""
+        owned += len(block.splitlines())
+        user = user_rules + max(0, cm_lines - len(block.splitlines()))
     else:
         user = cm_lines + user_rules
     if owned > LINE_CAP:
@@ -163,7 +247,8 @@ def _lint_claude(repo, gov, managed, fails, warns):
 
     # V4 forbidden phrases in generated markdown
     for rel in [render.RULES_MD, render.COVERAGE_MD] + (["CLAUDE.md"] if managed.get("claude_md_owned") else []):
-        text = (repo / rel).read_text(encoding="utf-8").lower()
+        text = (repo / rel).read_text(encoding="utf-8", errors="replace").lower()
+        text = (_agents_block(text) or "") if rel == "CLAUDE.md" else text
         for phrase in FORBIDDEN:
             if phrase in text:
                 fails.append(f"V4: '{phrase}' in {rel}")

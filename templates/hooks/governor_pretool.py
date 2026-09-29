@@ -20,6 +20,8 @@ def decide(event, cfg):
     if not isinstance(event, dict):
         raise ValueError("event is not an object")
     tool = str(event.get("tool_name") or "")
+    if not tool:
+        raise ValueError("event has no tool_name")
     ti = event.get("tool_input") or {}
     if not isinstance(ti, dict):
         raise ValueError("tool_input is not an object")
@@ -32,16 +34,21 @@ def decide(event, cfg):
         cmd = ti.get("command", "")
         if not isinstance(cmd, str):
             raise ValueError("command is not a string")
-        segs = gc.normalise(cmd)
+        segs = gc.normalise(cmd, tool=tool)
+        guard = cfg.get("guard")
+        if guard and gc.guard_hit(cmd, tool):
+            return "deny", guard["rule"], guard["text"]
         limit = cfg.get("repeat_fail")
         if limit:
             fails = gc.read_state(event, "fails", {})
-            if isinstance(fails, dict) and fails.get(gc.fail_key(cmd), 0) >= limit["n"]:
+            if isinstance(fails, dict) and fails.get(gc.fail_key(cmd, tool), 0) >= limit["n"]:
                 return "deny", limit["rule"], f"this command already failed {limit['n']} times this session"
+        allow = {rid: [re.compile(p, re.I) for p in pats] for rid, pats in (cfg.get("bash_allow") or {}).items()}
         for kind in ("deny", "ask"):
             for rule in cfg.get(f"bash_{kind}", []):
                 pat = re.compile(rule["pattern"], re.I)
-                if any(pat.search(s) for s in segs):
+                exempt = allow.get(rule["rule"], [])
+                if any(pat.search(s) and not any(a.search(s) for a in exempt) for s in segs):
                     return kind, rule["rule"], rule["text"]
     for p in gc.tool_paths(ti):
         for rule in cfg.get("path_deny", []):
@@ -66,7 +73,7 @@ def decide(event, cfg):
 def main():
     event = {}
     try:
-        event = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace") or "{}")
+        event = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace"))
         decision, rule, text = decide(event, gc.load_config())
     except Exception as exc:  # noqa: BLE001 - fail closed
         print(f"Governor pretool hook error, blocking (fail closed): {exc}", file=sys.stderr)

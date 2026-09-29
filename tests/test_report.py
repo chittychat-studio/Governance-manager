@@ -12,7 +12,7 @@ D = datetime.date(2026, 9, 29)
 def test_one_page_with_required_parts(installed, tmp_path):
     text = report.build(installed, today=D, verify_path=tmp_path / "none.json")
     assert len(text.splitlines()) <= report.MAX_LINES
-    for part in ("## Tier", "Tier 3", "| claude-code | 15 | 2 | 0 |", "## Exceptions", "Lint (V1-V7): pass",
+    for part in ("## Tier", "Tier 3", "| claude-code | 16 | 2 | 0 |", "## Exceptions", "Lint (V1-V7): pass",
                  "Drift (D1-D2a): none", "not a compliance certificate"):
         assert part in text, part
 
@@ -38,7 +38,7 @@ def test_exceptions_listed_with_reason(installed, tmp_path):
     render.render(installed)
     text = report.build(installed, today=D, verify_path=tmp_path / "x")
     assert "P9-db-dump disabled on 2026-09-29 by a@b.c: Backups run pg_dump by design here." in text
-    assert "| claude-code | 14 | 2 | 1 |" in text
+    assert "| claude-code | 15 | 2 | 1 |" in text
 
 
 def test_no_inferred_mappings(installed, tmp_path):

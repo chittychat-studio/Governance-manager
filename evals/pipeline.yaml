@@ -92,3 +92,50 @@ scenarios:
       - {do: snapshot}
       - {do: doctor, expect: fail, missing_include: [P6-secret-read, P6-stop-tests]}
       - {do: unchanged_since_snapshot}
+  # --- from re-review round 2 (2026-09-29) ---
+  - id: P13-agent-correction-cannot-drop-claude-code
+    base: api
+    steps:
+      - {do: init, answers: {exposure: public, tenancy: single, agent: [codex]}, expect: refused, contains: "switch enforcement off"}
+  - id: P14-deleted-governance-cannot-reset-tier
+    base: api
+    steps:
+      - {do: init, answers: {exposure: public, tenancy: single}, expect: ok, tier: 3}
+      - {do: delete, path: governance.yaml}
+      - {do: init, answers: {exposure: internal, tenancy: single}, expect: refused, contains: "Restore governance.yaml"}
+  - id: P15-hand-lowered-tier-fails-lint
+    base: api
+    steps:
+      - {do: init, answers: {exposure: public, tenancy: single}, expect: ok, tier: 3}
+      - {do: gov_set, key: [tier, effective], value: 1}
+      - {do: lint, expect: fail, code: V9}
+  - id: P16-fake-exception-fails-lint
+    base: api
+    steps:
+      - {do: init, answers: {exposure: public, tenancy: single}, expect: ok, tier: 3}
+      - {do: gov_set, key: [exceptions], value: [{kind: tier, tier: 1, reason: x}]}
+      - {do: lint, expect: fail, code: V9}
+  - id: P17-non-utf8-claude-md-refused-cleanly
+    base: api
+    steps:
+      - {do: write_bytes, path: CLAUDE.md, hex: "23204e6f74657320960d0a"}
+      - {do: init, answers: {exposure: public, tenancy: single}, expect: refused, contains: "not UTF-8"}
+      - {do: absent, path: governance.yaml}
+      - {do: absent, path: .claude/hooks}
+  - id: P18-corrupt-managed-refused-before-write
+    base: api
+    steps:
+      - {do: init, answers: {data_classes: [auth, pii], exposure: internal, tenancy: single}, expect: ok, tier: 2}
+      - {do: write, path: .claude/.governor-managed.json, text: "{bad"}
+      - {do: snapshot}
+      - {do: init, answers: {exposure: public, tenancy: single}, expect: refused, contains: "corrupt"}
+      - {do: unchanged_since_snapshot}
+  - id: P19-user-note-in-claude-md-kept
+    base: api
+    steps:
+      - {do: init, answers: {exposure: public, tenancy: single}, expect: ok}
+      - {do: append, path: CLAUDE.md, text: "\n- My own note: use httpx, not requests.\n"}
+      - {do: lint, expect: pass}
+      - {do: render, expect: ok}
+      - {do: file_contains, path: CLAUDE.md, text: "My own note"}
+      - {do: lint, expect: pass}

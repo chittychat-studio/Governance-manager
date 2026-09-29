@@ -27,7 +27,7 @@ DENY = [
     # shell grammar the old normaliser missed
     'bash -lc "rm -rf x"', "sh -ec 'rm -rf x'", 'bash -c -e "rm -rf x"', "for d in a; do rm -rf $d; done",
     "if true; then rm -rf x; fi", "(rm -rf x)", "{ rm -rf x; }", "! rm -rf x", "true & rm -rf x",
-    "sudo -u root rm -rf x", "find / -exec rm -rf {} +", "find . -name '*.pyc' -delete",
+    "sudo -u root rm -rf x", "find / -exec rm -rf {} +", "find app -name '*.py' -delete",
     "for b in a; do git push -f origin $b; done", "rm -rf x 2>&1", "nice -n 5 rm -rf x",
     'python3 -c "import shutil; shutil.rmtree(\'x\')"', "C:/Windows/System32/rm.exe -rf x",
     "git --no-pager push --force", "git push --force-with-lease=main:abc origin main",

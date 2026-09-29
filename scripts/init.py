@@ -64,8 +64,13 @@ def install(repo, answers, mcp_allow=None, with_ci=False, host=None):
     unknown_fields = sorted(set(answers) - set(REQUIRED) - set(OPTIONAL))
     if unknown_fields:
         return 3, [f"refused: unknown field(s) in answers: {unknown_fields}"]
+    previous = [p for p in (render.MANAGED, render.RULES_MD) if (repo / p).exists()]
+    if previous and not (repo / "governance.yaml").exists():
+        return 4, [f"refused: a previous Governor install exists ({', '.join(previous)}) but governance.yaml is "
+                   "missing. Restore governance.yaml from git; re-installing from scratch would drop its tier "
+                   "and exceptions (T6)."]
     det = _detect(repo, host)
-    corrections_in = {k: v for k, v in answers.items() if k in det["detected"]}
+    corrections_in = {k: v for k, v in answers.items() if k in det["detected"] and v not in (None, "", [])}
     try:
         corrected, corrections = ask.apply_corrections(det["detected"], corrections_in)
         det = dict(det, detected=corrected)
@@ -84,8 +89,7 @@ def install(repo, answers, mcp_allow=None, with_ci=False, host=None):
                        f"{gov['tier']['computed']}. Record that with scripts/exceptions.py --tier "
                        f"{gov['tier']['computed']} --reason \"...\" first (T6, X4)."]
     try:
-        if "claude-code" in gov["packs"]:
-            render.load_settings(repo)          # preflight: refuse before writing anything (R5, I2)
+        render.preflight(repo, gov)             # every render refusal, before anything is written (R5, I2)
         if with_ci and (repo / ".governor").exists() and not ci.owned(repo):
             return 4, ["refused: .governor/ exists and was not written by Governor; move it away first"]
         governance.write(repo, gov)

@@ -262,6 +262,24 @@ def _step(repo, s, state):
         missing += [x for x in s.get("allow", []) if x not in perms.get("allow", [])]
         missing += [x for x in s.get("deny", []) if x not in perms.get("deny", [])]
         return not missing, f"missing {missing}"
+    if do == "delete":
+        (repo / s["path"]).unlink()
+        return True, ""
+    if do == "write_bytes":
+        p = repo / s["path"]
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(bytes.fromhex(s["hex"]))
+        return True, ""
+    if do == "gov_set":
+        gov = governance.read(repo)
+        node = gov
+        for k in s["key"][:-1]:
+            node = node[k]
+        node[s["key"][-1]] = s["value"]
+        (repo / "governance.yaml").write_text(yaml.safe_dump(gov, sort_keys=False), encoding="utf-8")
+        return True, ""
+    if do == "file_contains":
+        return s["text"] in (repo / s["path"]).read_text(encoding="utf-8"), "text missing"
     if do == "absent":
         return not (repo / s["path"]).exists(), f"{s['path']} exists"
     if do == "snapshot":
