@@ -10,7 +10,6 @@ import argparse
 import json
 import re
 import sys
-import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -41,48 +40,133 @@ TENANT_RE = re.compile(r"\b(tenant_id|organization_id|org_id|workspace_id)\b", r
 NPM_DEFAULT_TEST = 'echo "Error: no test specified" && exit 1'
 
 
+HEALTH_RE = re.compile(r"\b(diagnosis|medical_record(?:_number)?|patient_id|nhs_number|icd_?10|prescription|mrn|"
+                       r"blood_type|allergies)\b(?:\s*[:=(]|\s+(?:text|varchar|char|date)\b)", re.I)
+PAYMENT_RE = re.compile(r"\b(card_number|cardholder_name|cvv|iban|sort_code|bank_account_number)\b"
+                        r"(?:\s*[:=(]|\s+(?:text|varchar|char)\b)", re.I)
+PG_EXTRA_RE = re.compile(r"^(sqlalchemy|databases|sqlmodel|tortoise-orm|piccolo)\[[^\]]*(postgres|asyncpg|psycopg)", re.I)
+COMPOSE_PG_RE = re.compile(r"^\s*image:\s*[\"']?(postgres|postgis/postgis|bitnami/postgresql)\b", re.I | re.M)
+MAX_DEPTH = 2
+
+
+def _read(path):
+    """Read a user file as text; tolerant of a UTF-8 BOM (Windows Notepad) and bad bytes."""
+    return Path(path).read_text(encoding="utf-8-sig", errors="ignore")
+
+
 def _norm(name):
     """Normalise a Python requirement string to its package name (I3)."""
-    return re.split(r"[\s<>=!~\[;]", name.strip().lower(), maxsplit=1)[0]
+    return re.split(r"[\s<>=!~\[;@]", name.strip().lower(), maxsplit=1)[0]
 
 
-def read_python_deps(repo):
-    """Collect Python dependency names with their source file (I3)."""
-    deps = {}
-    for req in sorted(repo.glob("requirements*.txt")):
-        for line in req.read_text(encoding="utf-8", errors="ignore").splitlines():
-            line = line.split("#", 1)[0].strip()
-            if line and not line.startswith("-"):
-                deps.setdefault(_norm(line), req.name)
-    pyproject = repo / "pyproject.toml"
-    if pyproject.exists():
-        try:
-            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-        except tomllib.TOMLDecodeError:
-            data = {}
-        names = list(data.get("project", {}).get("dependencies", []))
-        for group in data.get("project", {}).get("optional-dependencies", {}).values():
-            names.extend(group)
-        names.extend(data.get("tool", {}).get("poetry", {}).get("dependencies", {}).keys())
-        for n in names:
-            deps.setdefault(_norm(n), "pyproject.toml")
+def manifest_dirs(repo):
+    """The repo root and subdirectories up to MAX_DEPTH deep, skipping vendored/build dirs (I3)."""
+    out = [repo]
+    frontier = [repo]
+    for _ in range(MAX_DEPTH):
+        nxt = []
+        for d in frontier:
+            try:
+                children = sorted(c for c in d.iterdir() if c.is_dir() and not c.is_symlink())
+            except OSError:
+                continue
+            for c in children:
+                if c.name in SKIP_DIRS or c.name.startswith("."):
+                    continue
+                nxt.append(c)
+        out += nxt
+        frontier = nxt
+    return out
+
+
+def _requirements(path, repo, deps, extras, seen):
+    if path in seen or not path.is_file():
+        return
+    seen.add(path)
+    try:
+        rel = path.relative_to(repo).as_posix()
+    except ValueError:
+        return  # an include outside the repo is not evidence about this repo
+    for line in _read(path).splitlines():
+        line = line.split(" #", 1)[0].strip()
+        if not line or line.startswith("#"):
+            continue
+        m = re.match(r"^(-r|-c|--requirement|--constraint)\s*=?\s*(\S+)", line)
+        if m:
+            _requirements((path.parent / m.group(2)).resolve(), repo, deps, extras, seen)
+            continue
+        if line.startswith("-"):
+            continue
+        deps.setdefault(_norm(line), rel)
+        if PG_EXTRA_RE.match(line):
+            extras.setdefault("postgres", f"{rel}: {line}")
+
+
+def _pyproject_names(data):
+    names = list(data.get("project", {}).get("dependencies", []))
+    for group in data.get("project", {}).get("optional-dependencies", {}).values():
+        names.extend(group)
+    for group in data.get("dependency-groups", {}).values():
+        names.extend(x for x in group if isinstance(x, str))
+    tool = data.get("tool", {})
+    poetry = tool.get("poetry", {})
+    names.extend(poetry.get("dependencies", {}).keys())
+    names.extend(poetry.get("dev-dependencies", {}).keys())
+    for group in poetry.get("group", {}).values():
+        names.extend(group.get("dependencies", {}).keys())
+    names.extend(tool.get("uv", {}).get("dev-dependencies", []))
+    for group in tool.get("pdm", {}).get("dev-dependencies", {}).values():
+        names.extend(group)
+    for name, spec in poetry.get("dependencies", {}).items():
+        if isinstance(spec, dict) and any(re.search("postgres|asyncpg|psycopg", e) for e in spec.get("extras", [])):
+            names.append(f"{name}[postgresql]")
+    return [str(n) for n in names]
+
+
+def read_python_deps(repo, extras=None):
+    """Collect Python dependency names with their source file, across manifest dirs (I3)."""
+    import tomllib  # stdlib since 3.11; imported lazily so intake's version check reports first
+    deps, extras, seen = {}, ({} if extras is None else extras), set()
+    for d in manifest_dirs(repo):
+        for req in sorted(d.glob("requirements*.txt")) + sorted((d / "requirements").glob("*.txt")):
+            _requirements(req.resolve(), repo, deps, extras, seen)
+        pyproject = d / "pyproject.toml"
+        if pyproject.is_file():
+            try:
+                data = tomllib.loads(_read(pyproject))
+            except tomllib.TOMLDecodeError:
+                data = {}
+            rel = pyproject.relative_to(repo).as_posix()
+            for n in _pyproject_names(data):
+                deps.setdefault(_norm(n), rel)
+                if PG_EXTRA_RE.match(n):
+                    extras.setdefault("postgres", f"{rel}: {n}")
+            if data.get("tool", {}).get("pytest"):
+                deps.setdefault("pytest", rel)
+        for compose in sorted(d.glob("docker-compose*.y*ml")) + sorted(d.glob("compose*.y*ml")):
+            if COMPOSE_PG_RE.search(_read(compose)):
+                extras.setdefault("postgres", f"{compose.relative_to(repo).as_posix()}: postgres image")
     return deps
 
 
 def read_package_json(repo):
-    """Return (deps {name: 'package.json'}, scripts dict) (I3)."""
-    pkg = repo / "package.json"
-    if not pkg.exists():
-        return {}, {}
-    try:
-        data = json.loads(pkg.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}, {}
-    deps = {}
-    for key in ("dependencies", "devDependencies"):
-        for n in data.get(key, {}) or {}:
-            deps[n.lower()] = "package.json"
-    return deps, data.get("scripts", {}) or {}
+    """Return (deps {name: file}, scripts of the first package.json with a test script) (I3)."""
+    deps, scripts = {}, {}
+    for d in manifest_dirs(repo):
+        pkg = d / "package.json"
+        if not pkg.is_file():
+            continue
+        try:
+            data = json.loads(_read(pkg))
+        except json.JSONDecodeError:
+            continue
+        rel = pkg.relative_to(repo).as_posix()
+        for key in ("dependencies", "devDependencies"):
+            for n in data.get(key, {}) or {}:
+                deps.setdefault(n.lower(), rel)
+        if not scripts and d == repo:
+            scripts = data.get("scripts", {}) or {}
+    return deps, scripts
 
 
 def iter_source_files(repo):
@@ -109,7 +193,8 @@ def detect(repo_dir):
         detected[field] = value
         evidence.setdefault(field, []).append(why)
 
-    py = read_python_deps(repo)
+    extras = {}
+    py = read_python_deps(repo, extras)
     node, scripts = read_package_json(repo)
     alldeps = {**py, **node}
 
@@ -128,9 +213,11 @@ def detect(repo_dir):
         db = None
         if PY_DB & set(py) or NODE_DB & set(node):
             db = "postgres"
-            dbsrc = sorted((PY_DB & set(py)) | (NODE_DB & set(node)))
+            dbsrc = f"postgres driver {sorted((PY_DB & set(py)) | (NODE_DB & set(node)))}"
+        elif "postgres" in extras:
+            db, dbsrc = "postgres", extras["postgres"]
         put("stack", f"{framework}-{db}" if db else framework,
-            f"{src}: {framework} dependency" + (f"; postgres driver {dbsrc}" if db else ""))
+            f"{src}: {framework} dependency" + (f"; {dbsrc}" if db else ""))
         put("app_type", app_type, f"{src}: {framework} implies {app_type}")
 
     # data_classes (only positive evidence; never infer 'none')
@@ -140,21 +227,21 @@ def detect(repo_dir):
         if hits:
             classes.append(cls)
             evidence.setdefault("data_classes", []).append(f"{alldeps[hits[0]]}: {cls} library {hits}")
-    pii_file = tenant_file = None
+    found = {}
+    scans = {"pii": PII_RE, "health": HEALTH_RE, "payments": PAYMENT_RE, "tenant": TENANT_RE}
     for f in iter_source_files(repo):
-        text = f.read_text(encoding="utf-8", errors="ignore")
-        if pii_file is None and PII_RE.search(text):
-            pii_file = f
-            m = PII_RE.search(text)
-        if tenant_file is None and TENANT_RE.search(text):
-            tenant_file = f
-            t = TENANT_RE.search(text)
-        if pii_file and tenant_file:
+        text = _read(f)
+        for key, rx in scans.items():
+            if key not in found:
+                m = rx.search(text)
+                if m:
+                    found[key] = (f.relative_to(repo).as_posix(), m.group(1))
+        if len(found) == len(scans):
             break
-    if pii_file:
-        classes.append("pii")
-        evidence.setdefault("data_classes", []).append(
-            f"{pii_file.relative_to(repo).as_posix()}: personal-data field '{m.group(1)}'")
+    for cls in ("pii", "health", "payments"):
+        if cls in found:
+            classes.append(cls)
+            evidence.setdefault("data_classes", []).append(f"{found[cls][0]}: {cls} field '{found[cls][1]}'")
     if classes:
         detected["data_classes"] = sorted(set(classes))
 
@@ -165,8 +252,8 @@ def detect(repo_dir):
             break
 
     # tenancy: only 'multi' is detectable
-    if tenant_file:
-        put("tenancy", "multi", f"{tenant_file.relative_to(repo).as_posix()}: tenant key '{t.group(1)}'")
+    if "tenant" in found:
+        put("tenancy", "multi", f"{found['tenant'][0]}: tenant key '{found['tenant'][1]}'")
 
     # agent
     agents = []
@@ -183,25 +270,31 @@ def detect(repo_dir):
         detected["agent"] = agents
 
     # conventions.pkg_mgr
-    for lock, mgr in (("pnpm-lock.yaml", "pnpm"), ("yarn.lock", "yarn"), ("package-lock.json", "npm"),
-                      ("uv.lock", "uv"), ("poetry.lock", "poetry")):
-        if (repo / lock).exists():
-            put("pkg_mgr", mgr, f"{lock} present")
-            break
+    locks = [(d, lock, mgr) for d in manifest_dirs(repo)
+             for lock, mgr in (("uv.lock", "uv"), ("poetry.lock", "poetry"), ("pnpm-lock.yaml", "pnpm"),
+                               ("yarn.lock", "yarn"), ("package-lock.json", "npm")) if (d / lock).exists()]
+    py_first = "fastapi" in py or "django" in py or "flask" in py
+    locks.sort(key=lambda x: (x[2] not in ("uv", "poetry")) if py_first else (x[2] in ("uv", "poetry")))
+    if locks:
+        d, lock, mgr = locks[0]
+        put("pkg_mgr", mgr, f"{(d / lock).relative_to(repo).as_posix()} present")
     else:
-        if py and any(repo.glob("requirements*.txt")):
+        if py:
             put("pkg_mgr", "pip", "requirements*.txt present")
         elif node:
             put("pkg_mgr", "npm", "package.json without lockfile (npm default)")
 
     # test_cmd
     test_script = scripts.get("test")
-    if test_script and test_script.strip() != NPM_DEFAULT_TEST:
-        mgr = detected.get("pkg_mgr", "npm")
-        put("test_cmd", f"{mgr} test", f"package.json: scripts.test = {test_script!r}")
-    elif "pytest" in py or (repo / "pytest.ini").exists() or (repo / "conftest.py").exists() \
-            or any((repo / d / "conftest.py").exists() for d in ("tests", "test")):
-        put("test_cmd", "python -m pytest", "pytest dependency or config present")
+    mgr = detected.get("pkg_mgr")
+    has_pytest = "pytest" in py or (repo / "pytest.ini").exists() or (repo / "conftest.py").exists() \
+        or any((repo / d / "conftest.py").exists() for d in ("tests", "test"))
+    if has_pytest and (py_first or not test_script):
+        runner = {"uv": "uv run pytest", "poetry": "poetry run pytest"}.get(mgr, "python -m pytest")
+        put("test_cmd", runner, f"pytest dependency or config present; package manager {mgr or 'pip'}")
+    elif test_script and test_script.strip() != NPM_DEFAULT_TEST:
+        node_mgr = mgr if mgr in ("npm", "pnpm", "yarn") else "npm"
+        put("test_cmd", f"{node_mgr} test", f"package.json: scripts.test = {test_script!r}")
 
     # integrations
     integ = sorted({INTEGRATION_LIBS[d] for d in alldeps if d in INTEGRATION_LIBS})

@@ -78,6 +78,34 @@ def build_intake(detected, answers):
     return validate(intake)
 
 
+# Corrections to detected facts may only keep or raise risk. Lowering it goes through an exception (T6, X4).
+RISK_ORDER = {"exposure": ["internal", "public"], "tenancy": ["single", "multi"]}
+
+
+def apply_corrections(detected, corrections):
+    """Return detected facts with the user's corrections applied (I3a). Refuses risk-lowering changes."""
+    out = dict(detected)
+    applied = []
+    for field, raw in corrections.items():
+        if field not in QUESTION_BANK:
+            raise IntakeError(f"refused: unknown field '{field}'")
+        value = parse_answer(field, raw)
+        old = detected[field]
+        if field == "data_classes":
+            dropped = sorted(set(old) - set(value) - {"none"})
+            if dropped:
+                raise IntakeError(f"refused: removing detected data class(es) {dropped} would lower the tier. "
+                                  "If detection is wrong, keep them and record a tier exception with "
+                                  "scripts/exceptions.py --tier N --reason ... (T6, X4)")
+        if field in RISK_ORDER and RISK_ORDER[field].index(value) < RISK_ORDER[field].index(old):
+            raise IntakeError(f"refused: changing detected {field} {old!r} to {value!r} would lower the tier. "
+                              "Record a tier exception instead (T6, X4)")
+        if value != old:
+            applied.append({"field": field, "detected": old, "answer": value})
+        out[field] = value
+    return out, applied
+
+
 def run(detect_result, answer_source):
     """Ask planned questions via answer_source(field, question) and return intake (I2–I5)."""
     asked = {}

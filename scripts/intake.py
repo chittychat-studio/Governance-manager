@@ -4,7 +4,12 @@ Stdlib only. Validates the subset of JSON Schema used by intake.schema.json.
 """
 import json
 import re
+import sys
 from pathlib import Path
+
+if sys.version_info < (3, 11):  # tomllib and the typing used here need 3.11+
+    sys.exit(f"Governor needs Python 3.11 or newer; this is {sys.version.split()[0]}. "
+             "Install Python 3.11+ and run the command with it.")
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "intake.schema.json"

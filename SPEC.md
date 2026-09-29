@@ -22,6 +22,7 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 - **I1a** Closed enums, defined in `intake.schema.json`: `data_classes` ⊆ {`none`, `pii`, `auth`, `payments`, `health`}; `exposure` ∈ {`public`, `internal`}; `tenancy` ∈ {`single`, `multi`}; `agent` ⊆ {`claude-code`, `codex`}. `auth` = the app stores user credentials or session tokens. A value outside the enum → refuse (I2), never map to tier 1.
 - **I2** Any required field empty after detect + ask → refuse, naming the field. No partial output.
 - **I3** `detect.py` runs before any question is asked; only `unknown[]` fields are asked.
+- **I3a** Detected facts are shown with their evidence and the user may correct them (not counted as questions under I4). A correction may keep or raise risk; one that lowers it (drop a data class, public→internal, multi→single) is refused and needs an X4 exception. Corrections are recorded in `governance.yaml`. When Governor runs as a Claude Code plugin, `claude-code` is always among the agents.
 - **I4** Maximum 7 questions per run. Required `unknown[]` fields are asked first; optional fields only with the remaining budget.
 - **I5** Questions ask about facts or conventions only. Never ask the user which controls, guardrails or security measures they want.
 - **I5a** Questions come only from a fixed bank in `ask.py`; each entry maps to exactly one I1 field. No free-form questions.
@@ -34,7 +35,7 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 - **T3** `pii` with `exposure=public` or `tenancy=multi` → tier 3. [G — validate table on 3 real repos]
 - **T4** `pii` internal single-tenant, or `auth` with public exposure → tier 2. [G]
 - **T5** Everything else → tier 1.
-- **T6** A tier can only be lowered through an X-series exception (X4).
+- **T6** A tier can only be lowered through an X-series exception (X4). Re-running init with answers that lower the computed tier is refused unless such an exception exists.
 
 ## P — Rule packs
 

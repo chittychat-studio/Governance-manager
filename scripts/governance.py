@@ -29,7 +29,7 @@ def effective_tier(computed, exceptions):
     return min([computed] + lowered)
 
 
-def build(intake, exceptions=(), mcp_allow=(), hook_python=None):
+def build(intake, exceptions=(), mcp_allow=(), hook_python=None, corrections=()):
     """Assemble the governance dict from intake + tier + packs + exceptions (R1)."""
     validate(intake)
     exceptions = list(exceptions)
@@ -47,13 +47,14 @@ def build(intake, exceptions=(), mcp_allow=(), hook_python=None):
         "mcp_allow": sorted(set(mcp_allow)),
         "hook_python": hook_python or default_python(),
         "exceptions": exceptions,
+        "corrections": list(corrections),
     }
 
 
 def read(repo):
     """Load <repo>/governance.yaml, or None."""
     p = Path(repo) / FILENAME
-    return yaml.safe_load(p.read_text(encoding="utf-8")) if p.exists() else None
+    return yaml.safe_load(p.read_text(encoding="utf-8-sig")) if p.exists() else None
 
 
 def write(repo, gov):
