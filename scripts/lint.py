@@ -6,6 +6,7 @@ import ast
 import json
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -158,11 +159,17 @@ def _lint_claude(repo, gov, managed, fails, warns):
     except (OSError, json.JSONDecodeError) as exc:
         fails.append(f"V6: governor_config.json invalid: {exc}")
     hooks = settings.get("hooks", {})
+    pythons = set()
     for event in render.HOOK_EVENTS:
-        cmds = [h.get("command", "") for g in hooks.get(event, []) for h in g.get("hooks", [])
-                if isinstance(g, dict)]
-        if not any("/.claude/hooks/governor_" in c for c in cmds):
+        ours = [h for g in hooks.get(event, []) if isinstance(g, dict) for h in g.get("hooks", [])
+                if render.is_governor_hook(h)]
+        if not ours:
             fails.append(f"V6: {event} hook not registered in settings.json")
+        pythons |= {h.get("command", "") for h in ours if h.get("args")}
+    for py in sorted(pythons):
+        if shutil.which(py) is None:
+            warns.append(f"V6: hook interpreter '{py}' is not on PATH here; hooks would error and NOT block. "
+                         "Set hook_python in governance.yaml and re-render.")
     for event, groups in hooks.items():
         if not isinstance(groups, list) or not all(isinstance(g, dict) and isinstance(g.get("hooks"), list)
                                                    for g in groups):

@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import detect  # noqa: E402
+import render  # noqa: E402
 from ask import parse_answer  # noqa: E402
 from intake import REQUIRED  # noqa: E402
 from packs import PackError  # noqa: E402
@@ -85,10 +86,10 @@ def audit(repo, answers=None):
                                                       "mcp_allowlist")) else set()
         events |= {e for k, e in HOOK_EVENT_FOR.items() if k in h}
         for ev in sorted(events):
-            cmds = [x.get("command", "") for g in hooks.get(ev, []) for x in g.get("hooks", [])]
-            if not cmds:
+            handlers = [x for g in hooks.get(ev, []) for x in g.get("hooks", [])]
+            if not handlers:
                 gaps.append(f"no {ev} hook registered")
-            elif not any("governor_" in c for c in cmds):
+            elif not any(render.is_governor_hook(x) for x in handlers):
                 gaps.append(f"{ev} hook present but not Governor's; not audited")
         if r["enforcement"] == "advisory" and r["id"] not in text:
             gaps.append("rule not in CLAUDE.md / AGENTS.md / .claude/rules")

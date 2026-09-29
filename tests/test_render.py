@@ -198,3 +198,34 @@ def test_x1_requires_git_user(installed, monkeypatch):
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     with pytest.raises(exceptions.ExceptionRefused, match="user.email"):
         exceptions.add(installed, rule="P9-db-dump", reason="x" * 25, today=D)
+
+
+def test_hooks_are_exec_form_no_shell(installed):
+    """Windows: exec form runs the same under Git Bash or PowerShell (hooks docs)."""
+    s = settings(installed)
+    for event in render.HOOK_EVENTS:
+        h = [x for g in s["hooks"][event] for x in g["hooks"] if render.is_governor_hook(x)][0]
+        assert h["command"] in ("python", "python3")
+        assert h["args"][0].startswith("${CLAUDE_PROJECT_DIR}/.claude/hooks/governor_")
+        assert not any(tok in h["command"] for tok in ("exec", "$p", "||", ";"))
+
+
+def test_old_shell_form_entries_are_replaced(tmp_path):
+    old = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command":
+            "p=python3; exec \"$p\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/governor_stop.py\""}]}]}}
+    repo = install(tmp_path / "r", settings=old)
+    stops = [x for g in settings(repo)["hooks"]["Stop"] for x in g["hooks"]]
+    assert len(stops) == 1 and "args" in stops[0]
+
+
+def test_lint_warns_when_hook_python_missing(installed):
+    gov = governance.read(installed)
+    gov["hook_python"] = "no-such-python-xyz"
+    governance.write(installed, gov)
+    render.render(installed)
+    fails, warns = lint.lint(installed)
+    assert fails == [] and any("not on PATH" in w and "NOT block" in w for w in warns)
+
+
+def test_hook_python_recorded(installed):
+    assert governance.read(installed)["hook_python"] in ("python", "python3")

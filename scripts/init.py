@@ -42,7 +42,7 @@ def install(repo, answers, mcp_allow=None, with_ci=False):
         old = governance.read(repo) or {}
         gov = governance.build(intake, old.get("exceptions", []),
                                mcp_allow if mcp_allow is not None else old.get("mcp_allow", []),
-                               old.get("hook_python", "auto"))
+                               old.get("hook_python"))
     except (IntakeError, PackError) as exc:
         return 4, [str(exc)]
     governance.write(repo, gov)
