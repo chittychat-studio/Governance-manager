@@ -1,0 +1,2 @@
+# Dev/test only. Hooks are stdlib-only (P5).
+pytest>=8
