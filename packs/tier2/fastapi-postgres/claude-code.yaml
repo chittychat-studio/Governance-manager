@@ -1,0 +1,41 @@
+# Tier 2 = tier 1 + P9 (SPEC P3, P9).
+id: tier2/fastapi-postgres/claude-code
+version: 1
+tier: 2
+stack: fastapi-postgres
+agent: claude-code
+extends: tier1/fastapi-postgres/claude-code
+rules:
+  - id: P9-guardrail-self-edit
+    spec: P9
+    text: The agent cannot edit its own guardrails (.claude/settings.json, .claude/hooks/, governance.yaml).
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    deny: ['Edit(./.claude/settings.json)', 'Edit(./.claude/hooks/**)', 'Edit(./governance.yaml)', 'Edit(./.claude/.governor-managed.json)']
+    hook:
+      path_deny_write: ['.claude/settings.json', '.claude/hooks/*', 'governance.yaml', '.claude/.governor-managed.json']
+  - id: P9-db-dump
+    spec: P9
+    text: Database dump commands need human approval.
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    ask: ['Bash(pg_dump *)', 'Bash(pg_dumpall *)', 'Bash(mysqldump *)', 'Bash(mongodump *)']
+    hook:
+      bash_ask: ['^(pg_dump|pg_dumpall|mysqldump|mongodump)\b', '\bCOPY\b.*\bTO\b']
+  - id: P9-destructive-migration
+    spec: P9
+    text: Destructive schema changes need human approval.
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    ask: ['Bash(alembic downgrade *)', 'Bash(dropdb *)']
+    hook:
+      bash_ask: ['^alembic\s+downgrade\b', '^dropdb\b', '\bDROP\s+(TABLE|DATABASE|SCHEMA)\b', '\bTRUNCATE\b', 'migrate\s+reset\b']
+  - id: P9-no-pii-in-logs
+    spec: P9
+    text: Never log request bodies or personal-data fields, and never put real personal data in fixtures.
+    enforcement: advisory
+    mechanism: [instruction]
+    agents: [claude-code, codex]
