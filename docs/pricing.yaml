@@ -1,0 +1,6 @@
+# Price used by scripts/verify.py for --billing api estimates (SPEC E4a).
+# Left empty on purpose: fill from the official pricing page before an API-billed run.
+# A value without source and check date is refused.
+usd_per_million_tokens_blended: null   # blended input+output price for the model verify runs on
+source: null                           # URL of the pricing page you read
+checked: null                          # YYYY-MM-DD you read it
