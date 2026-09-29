@@ -160,12 +160,21 @@ def main(argv=None, input_fn=input):
     ap.add_argument("--claude", default="claude")
     ap.add_argument("--billing", choices=["api", "plan"], default="plan")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--cap-usd", type=float, help="hard cap for this whole run (C1/E4 unattended mode)")
     args = ap.parse_args(argv)
     try:
         _, usd, text = estimate(args.runs, args.billing)
     except VerifyRefused as exc:
         print(str(exc), file=sys.stderr)
         return 6
+    if args.cap_usd is not None:
+        if args.billing != "api" or usd is None:
+            print("refused: --cap-usd needs --billing api with a sourced price (E4a)", file=sys.stderr)
+            return 6
+        if usd > args.cap_usd:
+            print(f"refused: estimate ${usd:.2f} exceeds cap ${args.cap_usd:.2f} (E4)", file=sys.stderr)
+            return 6
+        usd = args.cap_usd
     print(f"Q-series verify: {len(TASKS)} tasks x {args.runs} run(s). Estimate: {text}")
     for t in TASKS:
         print(f"  - {t['id']}: {t['prompt']}")
