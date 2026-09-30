@@ -282,3 +282,22 @@ def test_settings_with_bom_is_accepted(tmp_path):
     (repo / ".claude/settings.json").write_bytes(b"\xef\xbb\xbf" + json.dumps({"model": "m"}).encode())
     install(repo)
     assert settings(repo)["model"] == "m" and lint.lint(repo)[0] == []
+
+
+def test_r7_working_agreement_is_rendered_fixed_and_linted(tmp_path):
+    """R7: every install gets the same short, advisory working agreement in the rules file and AGENTS.md;
+    removing it fails lint V1."""
+    repo = install(tmp_path / "repo", dict(FIXTURE_INTAKE, agent=["claude-code", "codex"]))
+    for rel in (render.RULES_MD, render.AGENTS_MD):
+        text = (repo / rel).read_text(encoding="utf-8")
+        tail = text.split("## Working agreement (advisory)", 1)[1]
+        assert all(line in tail for line in render.WORKING_AGREEMENT)
+    assert len(render.WORKING_AGREEMENT) <= 6
+    joined = " ".join(render.WORKING_AGREEMENT).lower()
+    for want in ("token budget", "ask the user", "another way round a blocked action", "rules above", "appreciated"):
+        assert want in joined
+    assert lint.lint(repo)[0] == []
+    p = repo / render.RULES_MD
+    p.write_text(p.read_text(encoding="utf-8").replace("## Working agreement (advisory)", "## Notes"),
+                 encoding="utf-8")
+    assert any("Working agreement" in f for f in lint.lint(repo)[0])
