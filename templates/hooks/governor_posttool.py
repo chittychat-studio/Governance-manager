@@ -1,4 +1,4 @@
-"""PostToolUse: secret scan on Edit/Write (P6) and failure counting for Bash/PowerShell (P8). Stdlib only (P5).
+"""PostToolUse: secret scan on Edit/Write (P6, P11) and failure counting for Bash/PowerShell (P8). Stdlib only (P5).
 
 The block decision is printed before anything is logged, so a logging failure cannot hide a hit.
 """
@@ -21,6 +21,8 @@ SECRET_PATTERNS = {
     "openai-key": r"\bsk-(proj-)?[0-9A-Za-z_-]{32,}\b",
     "google-api-key": r"\bAIza[0-9A-Za-z_-]{35}\b",
     "url-credentials": r"\b[a-z][a-z0-9+.-]*://[^:/\s'\"@]*:[^@\s'\"/]{3,}@(?!(localhost|127\.0\.0\.1)\b)[^\s'\"]+",
+    # P11: a server secret in a variable the build ships to the browser (Next.js, Vite, Expo, Create React App).
+    "public-env-secret": r"\b(NEXT_PUBLIC|VITE|EXPO_PUBLIC|REACT_APP)_[A-Z0-9_]*(SECRET|SERVICE_ROLE|PRIVATE|PASSWORD)[A-Z0-9_]*\b",
     # KEY = "value" / KEY: "value" where the name says secret.
     "assigned-secret": r"(?i)\b[A-Za-z0-9_.-]*(password|passwd|pwd|secret|api_?key|access_?key|token|private_?key)"
                        r"[A-Za-z0-9_]*['\"]?\s*[:=]\s*['\"]([^'\"\s]{12,})['\"]",
@@ -75,7 +77,7 @@ def main():
                 where = ", ".join(f"{f}:{n} ({name})" for f, name, n in total[:10])
                 print(json.dumps({"decision": "block", "reason":
                                   f"Governor rule {cfg['secret_scan_rule']}: possible secret written at {where}. "
-                                  "Remove it and load it from the environment instead."}))
+                                  "Remove it and load it from the environment instead." + gc.explain(cfg, cfg["secret_scan_rule"])}))
             gc.log(event, f"secret_scan ran rule={cfg['secret_scan_rule']} hits={len(total)}")
         return 0
     except Exception as exc:  # noqa: BLE001

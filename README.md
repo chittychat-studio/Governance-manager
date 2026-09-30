@@ -1,61 +1,72 @@
 # Governor
 
-Claude Code plugin that turns a repo plus a short intake into enforced agent governance:
-permission rules, PreToolUse/PostToolUse/Stop hooks, a rules file, lint, drift checks, a CI gate
-and a one-page evidence report. Rules: `SPEC.md`. Build order: `docs/BUILD_PLAN.md`.
+A safety kit for AI coding agents. Install it in a project, answer up to 7 plain questions, and Claude Code gets
+rules it cannot talk its way past: it cannot wipe folders, read your secret keys, force-push over your history or
+switch its own safety off; it must ask you before deploying, installing packages or changing your database; it
+gets told when it writes an API key into your code; and it cannot say "done" while your tests fail.
+Every rule is labelled **enforced** (actually blocked) or **advisory** (only told to the agent). Rules: `SPEC.md`.
 
-## Install (private marketplace)
+Works for any project. Extra rules for JavaScript/TypeScript web apps (Next.js, React, Vite, Node, Supabase,
+Firebase) and for Python FastAPI + Postgres. It is not a sandbox or a compliance certificate, and it has not yet
+been verified in a live session on real projects (see "Status" below).
 
-The repo is private, so the simplest route is a local clone used as a directory marketplace:
+## What you need
 
+Claude Code and Python 3.11 or newer. Nothing else: Governor uses only Python's standard library.
+No Python? Get it free from https://www.python.org/downloads/ (on Windows, tick "Add python.exe to PATH").
+
+## Install
+
+Once the repository is public:
+```
+/plugin marketplace add chittychat-studio/Governance-manager
+/plugin install governor@chittychat-governor
+```
+While it is private, clone it and add the clone as a local marketplace:
 ```
 git clone https://github.com/chittychat-studio/Governance-manager.git
 claude plugin marketplace add ./Governance-manager
 claude plugin install governor@chittychat-governor
 ```
-Or straight from GitHub, if your git can already reach the private repo:
-`claude plugin marketplace add chittychat-studio/Governance-manager` (append `@<branch>` for an unmerged branch).
-
-Needs Python 3.11+ with PyYAML (`python -m pip install pyyaml`). Hooks themselves are stdlib-only.
-
-## Test it on a local repo (Windows notes)
-
-Packs exist for **FastAPI + Postgres** only (for example DeckForge); other stacks are refused.
-
-1. `git switch -c governor-trial` in the target repo, so everything is one `git diff` to review or discard.
-2. In Claude Code in that repo: `/governor:init`, answer the questions it asks.
-3. Check `governance.yaml` → `hook_python` (the command the hooks run with; init picks the first of
-   `python`/`python3` that really starts Python). Lint **fails** if it does not start, because a hook that
-   cannot start does not block anything. Hooks need only the standard library; PyYAML is for the scripts.
-4. Restart Claude Code in the repo (settings and hooks load at session start), then check the hooks fire
-   using throwaway targets only, never real secrets or real folders, in case a hook fails open:
-   create `governor-test-dir/` and a `.env.governor-test` holding a fake value, then ask Claude to run
-   `rm -rf governor-test-dir` and to read `.env.governor-test`. Both must be refused citing a Governor rule,
-   the folder must still exist, and `.claude/governor/governor.log` must show `deny P6-rm-rf` and
-   `deny P6-secret-read`. On Windows, repeat with PowerShell wording: ask Claude to run
-   `Remove-Item -Recurse -Force governor-test-dir` and `Get-Content .env.governor-test`. Both must be refused
-   too. Delete both test files afterwards yourself.
-5. Undo: `git switch -` and delete the branch. Your original settings are also saved in
-   `.claude/settings.json.governor-backup`.
-
-Hooks are launched in exec form (no shell), and their shell rules cover both Claude Code's Bash tool and its
-PowerShell tool (the Windows default when Git Bash is absent). Shell rules match command text: they stop the
-commands an agent normally writes, not a determined attacker (variables, interpreters opening files). The
-evidence report says so; it is not a sandbox.
 
 ## Use
 
-| Skill | What it does |
+| Command | What it does |
 |---|---|
-| `/governor:init [--with-ci]` | Detect facts, ask the missing ones, render and lint |
-| `/governor:except --rule ID --reason "..."` | Disable one rule, or `--tier N` to lower the tier, with a recorded reason |
-| `/governor:drift` | Fail if the repo's facts moved (new data class, exposure, tenancy, tier) |
-| `/governor:doctor` | Read-only audit of an existing repo |
+| `/governor:init` | Looks at your project, asks what it can't see (in plain words; "not sure" is fine), installs the rules |
+| `/governor:status` | In plain words: what you are protected from, what needs your OK, what was blocked recently |
+| `/governor:except --rule ID --reason "..."` | Switch one rule off with a written reason (you run it, not the agent) |
+| `/governor:remove` | Shows what Governor would remove; you confirm it yourself with `--yes` |
+| `/governor:drift` | Tells you when the project has changed enough to need stronger rules |
+| `/governor:doctor` | Read-only check of an existing setup |
 | `/governor:report` | One-page evidence report |
 
-Packs exist for `fastapi-postgres` only. Other stacks are refused, not guessed.
-Status is always one of generated / linted / verified. Only `scripts/verify.py`, run locally with
-approval, can produce "verified", and only for the reference fixture.
+When something is blocked, the message says what, why, and what you can do instead. Answering "not sure" picks the
+safer option and records that it was assumed. Commit straight after installing: until you do, `git stash` or
+`git reset --hard` would undo the install.
+
+## Test it on your own repo first
+
+1. `git switch -c governor-trial`, so everything is one `git diff` to review or throw away.
+2. In Claude Code: `/governor:init`, answer the questions, then restart Claude Code.
+3. Check it fires, using throwaway targets only: make `governor-test-dir/` and `.env.governor-test` with a fake
+   value, ask Claude to run `rm -rf governor-test-dir` and to read `.env.governor-test`. Both must be refused, the
+   folder must still exist, and `/governor:status` must show them under "blocked". On Windows repeat with
+   `Remove-Item -Recurse -Force governor-test-dir` and `Get-Content .env.governor-test`.
+4. Use it for real work for a few days, then follow `docs/TRIALS.md` to record what it blocked that you wanted.
+5. To undo: `/governor:remove`, or `git switch -` and delete the branch.
+
+## How it works (technical)
+
+`governance.yaml` is the single source: detected facts, answers, tier (lookup in `tiers.yaml`), rule packs
+(`packs/tier{1,2,3}/{generic,node,fastapi-postgres}/`, hash-pinned in `PACKS.lock`, Ed25519-signed once a
+maintainer key exists: `packs/SIGNING_KEY.pub`) and exceptions. Render writes `.claude/settings.json` (merged, never
+overwritten; ownership in `.claude/.governor-managed.json`), hooks in `.claude/hooks/`, `.claude/rules/governor.md`,
+a coverage table and a marked block in CLAUDE.md / AGENTS.md. Hooks run in exec form (no shell) and cover Claude
+Code's Bash, PowerShell and Monitor tools. Shell rules match command text: they stop the commands an agent normally
+writes, not a determined attacker (variables, interpreters opening files); the report says so.
+Status is always one of generated / linted / verified. Only `scripts/verify.py`, run locally with approval, can
+produce "verified", and only for the reference fixture.
 
 ## Evals
 

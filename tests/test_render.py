@@ -84,7 +84,7 @@ def test_governance_yaml_is_single_source(installed):
     """R1: intake, tier, pack pins, exceptions."""
     gov = yaml.safe_load((installed / "governance.yaml").read_text())
     assert gov["tier"] == {"computed": 3, "matched": ["T3"], "effective": 3, "tiers_version": 1}
-    assert len(gov["packs"]["claude-code"]["pins"]) == 3
+    assert len(gov["packs"]["claude-code"]["pins"]) == 4  # generic 1-3 + family (P1a)
     assert gov["exceptions"] == []
 
 

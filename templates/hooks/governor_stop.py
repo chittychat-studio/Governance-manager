@@ -96,7 +96,7 @@ def main():
         tail = "\n".join(out.strip().splitlines()[-20:])
         print(json.dumps({"decision": "block", "reason":
                           f"Governor rule {rule}: `{cfg['test_cmd']}` is failing. Fix the tests before "
-                          f"finishing.\n{tail}"}))
+                          f"finishing.{gc.explain(cfg, rule)}\n{tail}"}))
         gc.log(event, f"stop_tests block rule={rule}")
         return 0
     except Exception as exc:  # noqa: BLE001

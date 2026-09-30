@@ -23,16 +23,21 @@ MAX_FILES = 3000
 
 PY_DB = {"psycopg", "psycopg2", "psycopg2-binary", "asyncpg", "psycopg-binary"}
 NODE_DB = {"pg", "postgres", "pg-promise"}
+# P1a, P11: hosted backends vibe-coded apps use; the stack becomes e.g. next-supabase, react-vite-firebase.
+NODE_BACKENDS = (("supabase", {"@supabase/supabase-js", "@supabase/ssr", "@supabase/auth-helpers-nextjs"}),
+                 ("firebase", {"firebase", "firebase-admin"}))
 AUTH_LIBS = {"passlib", "python-jose", "pyjwt", "fastapi-users", "bcrypt", "authlib", "argon2-cffi",
-             "jsonwebtoken", "passport", "bcryptjs", "next-auth", "express-session", "@auth/core"}
-PAYMENT_LIBS = {"stripe", "@stripe/stripe-js", "braintree", "paypalrestsdk", "@paypal/checkout-server-sdk"}
+             "jsonwebtoken", "passport", "bcryptjs", "next-auth", "express-session", "@auth/core",
+             "@clerk/nextjs", "@clerk/clerk-react", "better-auth", "lucia", "@supabase/auth-helpers-nextjs"}
+PAYMENT_LIBS = {"stripe", "@stripe/stripe-js", "braintree", "paypalrestsdk", "@paypal/checkout-server-sdk",
+                "@lemonsqueezy/lemonsqueezy.js", "@paddle/paddle-js", "@paddle/paddle-node-sdk"}
 HEALTH_LIBS = {"fhir.resources", "fhirclient", "hl7", "hl7apy", "fhir-kit-client"}
 INTEGRATION_LIBS = {"stripe": "stripe", "@stripe/stripe-js": "stripe", "supabase": "supabase",
                     "@supabase/supabase-js": "supabase", "openai": "openai", "anthropic": "anthropic",
                     "@anthropic-ai/sdk": "anthropic", "sendgrid": "sendgrid", "@sendgrid/mail": "sendgrid",
                     "twilio": "twilio", "boto3": "aws", "@aws-sdk/client-s3": "aws"}
 PUBLIC_DEPLOY_FILES = ["vercel.json", "netlify.toml", "fly.toml", "render.yaml", "railway.json",
-                       "app.yaml", "Procfile"]
+                       "app.yaml", "Procfile", "firebase.json", "wrangler.toml"]
 PII_RE = re.compile(r"\b(email|phone|phone_number|date_of_birth|dob|home_address|postcode|zip_code|ssn|"
                     r"national_insurance(?:_number)?|first_name|last_name|full_name)\b"
                     r"(?:\s*[:=(]|\s+(?:text|varchar|char|citext|date)\b)", re.I)
@@ -210,7 +215,9 @@ def detect(repo_dir):
     # stack + app_type
     framework = app_type = None
     for name, fw, at in (("fastapi", "fastapi", "api"), ("django", "django", "fullstack"),
-                         ("flask", "flask", "api"), ("next", "next", "fullstack"),
+                         ("flask", "flask", "api"), ("next", "next", "fullstack"), ("nuxt", "nuxt", "fullstack"),
+                         ("@sveltejs/kit", "sveltekit", "fullstack"), ("@remix-run/react", "remix", "fullstack"),
+                         ("astro", "astro", "fullstack"), ("@nestjs/core", "nest", "api"),
                          ("express", "node-express", "api")):
         if name in alldeps:
             framework, app_type = fw, at
@@ -218,6 +225,12 @@ def detect(repo_dir):
             break
     if framework is None and "react" in node and "vite" in node:
         framework, app_type, src = "react-vite", "web-spa", "package.json"
+    elif framework is None and ("react-scripts" in node or "react" in node):
+        framework, app_type, src = "react", "web-spa", "package.json"
+    elif framework is None and "vite" in node:
+        framework, app_type, src = "vite", "web-spa", "package.json"
+    elif framework is None and node:
+        framework, app_type, src = "node", None, "package.json"
     if framework:
         db = None
         if PY_DB & set(py) or NODE_DB & set(node):
@@ -225,9 +238,16 @@ def detect(repo_dir):
             dbsrc = f"postgres driver {sorted((PY_DB & set(py)) | (NODE_DB & set(node)))}"
         elif "postgres" in extras:
             db, dbsrc = "postgres", extras["postgres"]
+        else:
+            for name, libs in NODE_BACKENDS:
+                hit = sorted(libs & set(node))
+                if hit:
+                    db, dbsrc = name, f"{name} SDK {hit}"
+                    break
         put("stack", f"{framework}-{db}" if db else framework,
             f"{src}: {framework} dependency" + (f"; {dbsrc}" if db else ""))
-        put("app_type", app_type, f"{src}: {framework} implies {app_type}")
+        if app_type:
+            put("app_type", app_type, f"{src}: {framework} implies {app_type}")
 
     # data_classes (only positive evidence; never infer 'none')
     classes = []

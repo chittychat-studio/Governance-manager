@@ -127,19 +127,23 @@ def test_crlf_checkout_hashes_the_same(tmp_path):
     assert packs.file_sha256(crlf) == packs.file_sha256(src)
 
 
-def test_unknown_stack_refuses():
-    """P1: no pack -> refuse, never fall back."""
+def test_unknown_stack_gets_a_family_pack():
+    """P1a (changed from P1's old refusal): every stack gets a pack by lookup, never a refusal for its stack."""
+    js = select_pack.select(dict(BASE, stack="react-vite", data_classes=["none"], exposure="public", tenancy="single"), 1)
+    assert js["claude-code"]["pack_id"] == "tier1/node/claude-code"
+    other = select_pack.select(dict(BASE, stack="rails-mysql", data_classes=["none"], exposure="public",
+                                    tenancy="single"), 1)
+    assert other["claude-code"]["pack_id"] == "tier1/generic/claude-code"
     with pytest.raises(packs.PackError, match="no pack"):
-        select_pack.select(dict(BASE, stack="react-vite", data_classes=["none"],
-                                exposure="public", tenancy="single"), 1)
+        packs.resolve("tier1/does-not-exist/claude-code")
 
 
 def test_selection_is_lookup():
     sel = select_pack.select(intake(["pii"], "public", "multi"), 3)
     assert sel["claude-code"]["pack_id"] == "tier3/fastapi-postgres/claude-code"
     assert [p for p, _ in sel["claude-code"]["pins"]] == [
-        "tier1/fastapi-postgres/claude-code", "tier2/fastapi-postgres/claude-code",
-        "tier3/fastapi-postgres/claude-code"]
+        "tier1/generic/claude-code", "tier2/generic/claude-code", "tier3/generic/claude-code",
+        "tier3/fastapi-postgres/claude-code"]  # P1a: the family pack extends the generic chain
 
 
 def test_select_script_is_not_named_select():

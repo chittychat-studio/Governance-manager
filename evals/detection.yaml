@@ -62,16 +62,37 @@ cases:
     expect: {agent: [claude-code, codex]}
     answers: {data_classes: [none], exposure: internal, tenancy: single}
     tier: 1
-  - id: D12-no-db-refused
+  - id: D12-no-db-gets-generic-pack        # P1a (was: refused, no pack)
     files: {requirements.txt: "fastapi\npytest\n"}
     expect: {stack: fastapi}
     answers: {data_classes: [none], exposure: internal, tenancy: single}
-    refused: "no pack"
-  - id: D13-react-only-refused
+    tier: 1
+    pack: tier1/generic/claude-code
+  - id: D13-react-vite-gets-node-pack       # P1a (was: refused, no pack)
     files: {package.json: "{\"dependencies\":{\"react\":\"18\",\"vite\":\"5\"},\"scripts\":{\"test\":\"vitest\"}}", package-lock.json: "{}"}
     expect: {stack: react-vite, app_type: web-spa, test_cmd: "npm test"}
     answers: {data_classes: [none], exposure: public, tenancy: single}
-    refused: "no pack"
+    tier: 1
+    pack: tier1/node/claude-code
+  - id: D16-next-supabase-node-pack         # P1a, P11
+    files: {package.json: "{\"dependencies\":{\"next\":\"14\",\"react\":\"18\",\"@supabase/supabase-js\":\"2\",\"@clerk/nextjs\":\"5\"},\"scripts\":{\"test\":\"vitest\"}}", vercel.json: "{}"}
+    expect: {stack: next-supabase, app_type: fullstack, exposure: public}
+    data_classes_include: [auth]
+    answers: {tenancy: single}
+    tier: 2
+    pack: tier2/node/claude-code
+  - id: D17-vite-firebase-no-tests          # P1a, I1c
+    files: {package.json: "{\"dependencies\":{\"react\":\"18\",\"vite\":\"5\",\"firebase\":\"10\"}}", firebase.json: "{}"}
+    expect: {stack: react-vite-firebase, app_type: web-spa, exposure: public}
+    answers: {data_classes: [pii], tenancy: single, test_cmd: none}
+    tier: 3
+    pack: tier3/node/claude-code
+  - id: D18-rails-generic                   # P1a: a stack with no family gets the generic rules
+    files: {Gemfile: "gem 'rails'\n"}
+    expect: {}
+    answers: {app_type: fullstack, stack: rails-postgres, data_classes: [pii], exposure: public, tenancy: multi, test_cmd: "bin/rails test"}
+    tier: 3
+    pack: tier3/generic/claude-code
   - id: D14-empty-repo-asks
     files: {README.md: "hello\n"}
     expect: {}

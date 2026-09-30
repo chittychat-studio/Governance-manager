@@ -39,10 +39,10 @@ def questions(repo, host=None):
     """Detected facts (to confirm or correct) with evidence, plus the planned questions (I3, I3a, I4, I5a)."""
     det = _detect(repo, host)
     return {"detected": det["detected"], "evidence": det["evidence"],
-            "confirm": [{"field": f, "value": det["detected"][f], "options": enum_for(f),
+            "confirm": [{"field": f, "value": det["detected"][f], "options": ask.options_for(f) or enum_for(f),
                          "note": "may be corrected; a correction that lowers risk is refused (use an exception)"}
                         for f in REQUIRED if f in det["detected"]],
-            "questions": [{"field": f, "question": ask.QUESTION_BANK[f][1], "options": enum_for(f),
+            "questions": [{"field": f, "question": ask.QUESTION_BANK[f][1], "options": ask.options_for(f) or enum_for(f),
                            "multiple": ask.QUESTION_BANK[f][0].startswith("many")}
                           for f in ask.plan_questions(det["unknown"])]}
 
@@ -72,14 +72,15 @@ def install(repo, answers, mcp_allow=None, with_ci=False, host=None, human=False
     det = _detect(repo, host)
     corrections_in = {k: v for k, v in answers.items() if k in det["detected"] and v not in (None, "", [])}
     try:
-        corrected, corrections = ask.apply_corrections(det["detected"], corrections_in)
+        assumed = []
+        corrected, corrections = ask.apply_corrections(det["detected"], corrections_in, assumed)
         det = dict(det, detected=corrected)
-        intake, _ = ask.run(det, lambda f, q: answers.get(f))
+        intake, _ = ask.run(det, lambda f, q: answers.get(f), assumed)
         old = governance.read(repo) or {}
         exceptions = old.get("exceptions", [])
         gov = governance.build(intake, exceptions,
                                mcp_allow if mcp_allow is not None else old.get("mcp_allow", []),
-                               old.get("hook_python"), corrections)
+                               old.get("hook_python"), corrections, assumed)
     except (IntakeError, PackError) as exc:
         return 4, [str(exc)]
     problem = render.test_cmd_problem(gov)   # before I1d, so a --human re-run is never sent to a dead end (I1b)
@@ -114,6 +115,7 @@ def install(repo, answers, mcp_allow=None, with_ci=False, host=None, human=False
            f"{', '.join(gov['tier']['matched'])}); packs: "
            + ", ".join(p["pack_id"] for p in gov["packs"].values())]
     out += [f"corrected {c['field']}: detected {c['detected']} -> {c['answer']}" for c in corrections]
+    out += [f"assumed {f} = {gov['intake'][f]} because the answer was 'not sure' (I1e)" for f in sorted(set(assumed))]
     blocked = [s for s in mcp_servers(repo) if s not in gov["mcp_allow"]]
     if blocked and "claude-code" in gov["packs"]:
         names = ", ".join(detect.safe_name(n) for n in blocked[:20]) + (" and more" if len(blocked) > 20 else "")

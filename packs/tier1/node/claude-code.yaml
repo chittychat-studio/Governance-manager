@@ -1,0 +1,14 @@
+# JavaScript/TypeScript web apps (Next.js, React, Vite, Node, Supabase, Firebase), tier 1 (SPEC P1a, P11). Extends the generic tier-1 pack; only adds.
+id: tier1/node/claude-code
+version: 4
+tier: 1
+stack: node
+agent: claude-code
+extends: tier1/generic/claude-code
+rules:
+  - id: P11-supabase-rls
+    spec: P11
+    text: Keep Row Level Security on for every Supabase table, and never use the Supabase service-role key in browser code.
+    enforcement: advisory
+    mechanism: [instruction]
+    agents: [claude-code, codex]

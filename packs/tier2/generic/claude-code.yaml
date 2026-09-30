@@ -1,0 +1,50 @@
+# Tier 2 = tier 1 + P9 (SPEC P3, P9).
+id: tier2/generic/claude-code
+version: 3
+tier: 2
+stack: generic
+agent: claude-code
+extends: tier1/generic/claude-code
+rules:
+  - id: P9-db-dump
+    spec: P9
+    text: Database dump commands need human approval.
+    plain: "This copies your whole database, including your users' personal data, into a file."
+    you_can: "Approve only if you need a backup and know where the file will go."
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    ask: ['Bash(pg_dump *)', 'Bash(pg_dumpall *)', 'Bash(mysqldump *)', 'Bash(mongodump *)']
+    hook:
+      bash_ask:
+        - '^(pg_dump|pg_dumpall|mysqldump|mongodump|mongoexport)\b'
+        - '^psql\b.*(\\copy|\bcopy\b.*\bto\b)'
+        - '^(mysql|psql)\b.*\binto\s+outfile\b'
+  - id: P9-destructive-migration
+    spec: P9
+    text: Destructive schema changes need human approval.
+    plain: "This can delete tables or data in your database, and it may not be possible to undo."
+    you_can: "Approve only on a test or local database, or after taking a backup."
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    ask: ['Bash(alembic downgrade *)', 'Bash(dropdb *)']
+    hook:
+      bash_ask:
+        - '^(npx\s+|pnpm\s+(exec\s+|dlx\s+)?|bunx\s+|yarn\s+)?prisma\s+migrate\s+reset\b'
+        - '^(npx\s+|pnpm\s+(exec\s+|dlx\s+)?|bunx\s+|yarn\s+)?prisma\s+db\s+push\b.*--(force-reset|accept-data-loss)\b'
+        - '^(npx\s+)?supabase\s+db\s+reset\b'
+        - '^(npx\s+|bunx\s+)?drizzle-kit\s+drop\b'
+        - '^(python[\d.]*\s+-m\s+)?alembic\b.*\sdowngrade\b'
+        - '^dropdb\b'
+        - '^(psql|mysql|mariadb|sqlite3|sqlcmd|cockroach)\b.*\b(drop\s+(table|database|schema)|truncate\s+(table\s+)?["\w])'
+        - '\b(drop\s+(table|database|schema)|truncate\s+(table\s+)?["\w]).*\|\s*(psql|mysql|mariadb|sqlite3)\b'
+        - '\bmigrate\s+reset\b'
+        - '^(psql|mysql)\b.*\s(-f|--file)\b'
+        - '^(python[\d.]*\s+)?manage\.py\s+(flush|reset_db)\b'
+  - id: P9-no-pii-in-logs
+    spec: P9
+    text: Never log request bodies or personal-data fields, and never put real personal data in fixtures.
+    enforcement: advisory
+    mechanism: [instruction]
+    agents: [claude-code, codex]

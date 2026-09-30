@@ -1,4 +1,4 @@
-"""PreToolUse guard (SPEC P6, P7, P8, P9, P10, L5). Stdlib only (P5).
+"""PreToolUse guard (SPEC P6, P7, P8, P9, P10, P12, L5). Stdlib only (P5).
 
 deny -> exit 2 with the rule id on stderr; ask -> permissionDecision "ask".
 Covers the Bash and PowerShell tools. Any internal error blocks (fail closed); logging can never
@@ -76,18 +76,19 @@ def main():
     event = {}
     try:
         event = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace"))
-        decision, rule, text = decide(event, gc.load_config())
+        cfg = gc.load_config()
+        decision, rule, text = decide(event, cfg)
     except Exception as exc:  # noqa: BLE001 - fail closed
         print(f"Governor pretool hook error, blocking (fail closed): {exc}", file=sys.stderr)
         return 2
     if decision is None:
         return 0
     if decision == "deny":
-        print(f"Blocked by Governor rule {rule}: {text} {NO_WORKAROUND}", file=sys.stderr)
+        print(f"Blocked by Governor rule {rule}: {text}{gc.explain(cfg, rule)}\n{NO_WORKAROUND}", file=sys.stderr)
         gc.log(event, f"deny {rule} tool={event.get('tool_name')}")
         return 2
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
-                                             "permissionDecisionReason": f"Governor rule {rule}: {text}"}}))
+                                             "permissionDecisionReason": f"Governor rule {rule}: {text}{gc.explain(cfg, rule)}"}}))
     gc.log(event, f"ask {rule} tool={event.get('tool_name')}")
     return 0
 

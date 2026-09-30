@@ -13,8 +13,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import drift  # noqa: E402
+import friction  # noqa: E402
 import governance  # noqa: E402
 import lint  # noqa: E402
+import packs  # noqa: E402
 import render  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -50,7 +52,8 @@ def build(repo, today=None, verify_path=VERIFY_RESULT):
              f"Data classes: {', '.join(i['data_classes'])}; exposure: {i['exposure']}; tenancy: {i['tenancy']}.",
              "", f"Test command run by the Stop hook: `{i['test_cmd']}`"
              + (" · corrected by the user: " + ", ".join(c["field"] for c in gov.get("corrections", []))
-                if gov.get("corrections") else ""),
+                if gov.get("corrections") else "")
+             + (" · assumed because the answer was 'not sure': " + ", ".join(gov["assumed"]) if gov.get("assumed") else ""),
              "", "## Rules", "", "| Agent | Enforced | Advisory | Disabled |", "|---|---|---|---|"]
     mappings = []
     for agent in gov["packs"]:
@@ -78,12 +81,13 @@ def build(repo, today=None, verify_path=VERIFY_RESULT):
     else:
         lines.append("- Q-series on Governor's reference fixture: not run. Nothing here has been verified "
                      "against a live agent session.")
+    lines += ["", "## Friction (EV4)", ""] + friction.summary_lines(repo)[:6]
     lines += ["", "## Framework mappings", ""]
     lines += [f"- {rid}: {m}" for rid, m in mappings] or ["- None declared by the selected packs."]
     lines += ["", "## Limits", "",
               "- \"Enforced\" means a Claude Code hook or permission rule acts on the agent's tool calls. "
               "It is not an operating-system sandbox and does not cover code a human runs.",
-              "- Packs are hash-pinned, not cryptographically signed.",
+              f"- Packs are {packs.signature_status()}.",
               "- Advisory rules are instructions the agent may not follow."]
     return "\n".join(lines) + "\n"
 

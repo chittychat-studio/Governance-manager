@@ -1,6 +1,6 @@
 {
   "name": "chittychat-governor",
-  "description": "Private marketplace for the Governor plugin.",
+  "description": "Marketplace for the Governor plugin.",
   "owner": {"name": "chittychat-studio"},
   "plugins": [
     {

@@ -47,6 +47,14 @@ def load_config():
     return cfg
 
 
+def explain(cfg, rule):
+    """P12: the plain 'why' and 'what you can do' lines for a rule, or '' when the config has none."""
+    info = (cfg.get("plain") or {}).get(rule) if isinstance(cfg.get("plain"), dict) else None
+    if not isinstance(info, dict):
+        return ""
+    return f"\nWhy: {info.get('plain', '')}\nWhat you can do: {info.get('you_can', '')}"
+
+
 def project_dir(event):
     """Project root: $CLAUDE_PROJECT_DIR, else the event cwd."""
     cwd = event.get("cwd") if isinstance(event, dict) else None
@@ -469,6 +477,9 @@ def guard_hit(cmd, tool="Bash"):
                 continue
             if any(os.path.basename(t.replace("\\", "/")) in GOVERNOR_ADMIN_SCRIPTS for t in toks):
                 return True
+            if any(os.path.basename(t.replace("\\", "/")) == "remove.py" for t in toks) and \
+                    any(t.lower() in ("--yes", "-y") for t in toks):
+                return True   # U1: removing Governor is the user's action; the dry run stays allowed
             if any(t.lower().split("=", 1)[0] == "--human" for t in toks) and \
                     any(os.path.basename(t.replace("\\", "/")) in GOVERNOR_SCRIPTS for t in toks):
                 return True
