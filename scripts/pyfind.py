@@ -7,9 +7,29 @@ import subprocess
 CHECK = "import sys, json; print(json.dumps(['governor-ok', sys.version_info[0], sys.version_info[1]]))"
 
 
-def works(cmd):
-    """True if `cmd -c CHECK` runs and exits 0 (a Windows Store alias stub fails this)."""
-    if not cmd or shutil.which(cmd) is None:
+SAFE_NAMES = ("python3", "python", "py")
+
+
+def unsafe_reason(cmd, repo=None):
+    """V6a: why cmd must not be used as the hook interpreter, or None. Checked before anything executes it."""
+    cmd = str(cmd or "")
+    if cmd in SAFE_NAMES:
+        return None
+    if not os.path.isabs(cmd) or any(c.isspace() for c in cmd):
+        return (f"hook_python {cmd!r} must be python3, python, py or an absolute path to an interpreter outside the "
+                "repository (V6a)")
+    if repo is not None:
+        root = os.path.realpath(str(repo))
+        real = os.path.realpath(cmd)
+        if real == root or real.startswith(root.rstrip(os.sep) + os.sep):
+            return f"hook_python {cmd!r} is inside the repository, so the repo could replace it (V6a)"
+    return None
+
+
+def works(cmd, repo=None):
+    """True if `cmd -c CHECK` runs and exits 0 (a Windows Store alias stub fails this). Unsafe values (V6a) are
+    never executed."""
+    if not cmd or unsafe_reason(cmd, repo) or shutil.which(cmd) is None:
         return False
     try:
         r = subprocess.run([cmd, "-c", CHECK], capture_output=True, text=True, timeout=20)

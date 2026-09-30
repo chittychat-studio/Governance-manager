@@ -12,6 +12,7 @@ Usage:
 """
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -73,8 +74,21 @@ NOT_SURE_WORDS = {"not sure", "not-sure", "unsure", "don't know", "dont know", "
 STACK_WORDS = {"javascript": "node", "typescript": "node", "js": "node", "ts": "node", "python": "python"}
 
 
+NOT_SURE_PHRASES = ("not sure", "unsure", "don't know", "dont know", "do not know", "idk", "no idea", "not certain")
+NO_TESTS = {"none", "no", "no tests", "no test", "n/a", "na", "nothing", "none yet", "no tests yet", "not yet"}
+STACK_WORDS.update({w: "node" for w in ("react", "next", "nextjs", "next.js", "vue", "nuxt", "svelte", "sveltekit",
+                                         "node", "nodejs", "node.js", "express", "vite", "remix", "astro")})
+STACK_WORDS.update({w: "python" for w in ("flask", "django")})
+
+
+def _clean(raw):
+    """Lower-case, trim, and drop trailing punctuation: 'Public.' -> 'public' (I5b)."""
+    return str(raw).strip().strip(".!?,;:'\"").strip().lower()
+
+
 def is_not_sure(raw):
-    return str(raw).strip().lower() in NOT_SURE_WORDS
+    t = _clean(raw)
+    return t in NOT_SURE_WORDS or any(p in t for p in NOT_SURE_PHRASES)
 
 
 def options_for(field):
@@ -94,6 +108,8 @@ def parse_answer(field, raw, assumed=None):
     notes the field in `assumed` (I1e). Returns value or raises."""
     kind, _ = QUESTION_BANK[field]
     allowed = enum_for(field)
+    if field == "test_cmd" and not isinstance(raw, list) and (is_not_sure(raw) or _clean(raw) in NO_TESTS):
+        return "none"   # I1c: no test suite (yet); the Stop-hook gate is then inactive rather than stuck
     if field == "data_classes":
         items = raw if isinstance(raw, list) else [x for x in str(raw).split(",")]
         if any(is_not_sure(x) for x in items):
@@ -104,8 +120,14 @@ def parse_answer(field, raw, assumed=None):
         if assumed is not None:
             assumed.append(field)
         return NOT_SURE_VALUE[field]
-    if field == "stack" and not isinstance(raw, list) and str(raw).strip().lower() in STACK_WORDS:
-        return STACK_WORDS[str(raw).strip().lower()]
+    if field == "stack" and not isinstance(raw, list):
+        word = _clean(raw)
+        if word in STACK_WORDS:
+            return STACK_WORDS[word]
+        if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", word):
+            raise IntakeError(f"{field}: {str(raw).strip()!r} isn't one of the choices. Answer javascript, python or "
+                              "not sure (or a name like fastapi-postgres) (I5b)")
+        return word
     if isinstance(raw, list):
         if not kind.startswith("many") and len(raw) != 1:
             raise IntakeError(f"{field}: expected one value, got a list of {len(raw)} (I1a)")
@@ -114,9 +136,12 @@ def parse_answer(field, raw, assumed=None):
         items = [x.strip() for x in str(raw).split(",")] if kind.startswith("many") else [str(raw).strip()]
     items = [x for x in items if x]
     if allowed is not None:
+        items = [_clean(x) if _clean(x) in allowed else x for x in items]
         bad = [x for x in items if x not in allowed]
         if bad:
-            raise IntakeError(f"{field}: {bad} not in {allowed} (I1a)")
+            extra = " or not sure" if field in NOT_SURE_VALUE or field == "data_classes" else ""
+            raise IntakeError(f"{field}: {', '.join(repr(b) for b in bad)} isn't one of the choices: "
+                              f"{', '.join(allowed)}{extra} (I1a)")
     if kind.startswith("many"):
         return items
     return items[0] if items else ""
@@ -142,8 +167,10 @@ def build_intake(detected, answers):
 RISK_ORDER = {"exposure": ["internal", "public"], "tenancy": ["single", "multi"]}
 
 
-def apply_corrections(detected, corrections, assumed=None):
-    """Return detected facts with the user's corrections applied (I3a). Refuses risk-lowering changes."""
+def apply_corrections(detected, corrections, assumed=None, previous=()):
+    """Return detected facts with the user's corrections applied (I3a). Refuses risk-lowering changes.
+    `previous`: fields filled from the user's earlier answers, not detected. Changing those skips the per-field risk
+    refusal; the tier-drop check in init (T6) still needs an exception."""
     out = dict(detected)
     applied = []
     for field, raw in corrections.items():
@@ -152,17 +179,33 @@ def apply_corrections(detected, corrections, assumed=None):
         mark = []
         value = parse_answer(field, raw, mark)
         old = detected[field]
-        if mark:  # I1e: "not sure" keeps what was detected and adds the higher-risk value
-            if assumed is not None:
-                assumed.extend(mark)
+        if mark:  # I1e: "not sure" never lowers a detected fact
             if field == "data_classes":
                 value = sorted((set(old) | set(value)) - {"none"})
+                if assumed is not None:
+                    assumed.extend(mark)
+            elif field not in RISK_ORDER:
+                value = old   # "not sure" about a detected stack or app type: keep what was detected
+            elif assumed is not None:
+                assumed.extend(mark)
+        if field == "stack" and value != old:
+            from select_pack import family, family_rule_ids
+            lost = family_rule_ids(family(old)) - family_rule_ids(family(value))
+            if lost:
+                raise IntakeError(f"refused: changing the detected stack {old!r} to {value!r} would drop rules "
+                                  f"{sorted(lost)} (I3a). If detection is wrong, record an exception with "
+                                  "/governor:except instead")
+        if field in previous:
+            if value != old:
+                applied.append({"field": field, "detected": old, "answer": value})
+            out[field] = value
+            continue
         if field == "data_classes":
             dropped = sorted(set(old) - set(value) - {"none"})
             if dropped:
                 raise IntakeError(f"refused: removing detected data class(es) {dropped} would lower the tier. "
-                                  "If detection is wrong, keep them and record a tier exception with "
-                                  "scripts/exceptions.py --tier N --reason ... (T6, X4)")
+                                  "If detection is wrong, keep them and ask for a tier exception with "
+                                  "/governor:except --tier N --reason \"why\" (T6, X4)")
         if field == "agent":
             dropped = sorted(set(old) - set(value))
             if dropped:
@@ -173,7 +216,7 @@ def apply_corrections(detected, corrections, assumed=None):
                               "Stop-hook test gate off (I1c). Record a rule exception for it instead (X1)")
         if field in RISK_ORDER and RISK_ORDER[field].index(value) < RISK_ORDER[field].index(old):
             raise IntakeError(f"refused: changing detected {field} {old!r} to {value!r} would lower the tier. "
-                              "Record a tier exception instead (T6, X4)")
+                              "If that is right, use /governor:except --tier N --reason \"why\" (T6, X4)")
         if value != old:
             applied.append({"field": field, "detected": old, "answer": value})
         out[field] = value
@@ -197,7 +240,7 @@ def run(detect_result, answer_source, assumed=None):
 
 def main(argv=None):
     """CLI entry point (I2–I5)."""
-    ap = argparse.ArgumentParser(description="Governor intake questions")
+    ap = argparse.ArgumentParser(allow_abbrev=False, description="Governor intake questions")
     ap.add_argument("detected")
     ap.add_argument("--answers", help="JSON file of field -> answer (non-interactive)")
     ap.add_argument("--out", required=True)

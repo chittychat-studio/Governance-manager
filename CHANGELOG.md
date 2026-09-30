@@ -25,7 +25,7 @@ For vibe coders: any project, no extra installs, plain words.
   missing or bad signature once `packs/SIGNING_KEY.pub` exists. Not yet signed: the maintainer creates the key.
 - Version 0.2.0. Existing installs: re-run `/governor:init` (pack pins changed; lint says so).
 - **Real-repo trials, round 1 (T3, EV4).** `scripts/trial.py` on four real repos: 149 documented commands, friction
-  down from 9 to 0 after the fixes below, every attack stopped (docs/TRIALS.md).
+  down from 10 to 0 after the fixes below, every attack stopped (docs/TRIALS.md).
   - Shell comments are ignored before matching (P7b).
   - Windows `copy` / `Copy-Item .env.example .env` is allowed (P6a).
   - Restoring declared dependencies no longer asks while manifests are unchanged in git; editing a manifest makes

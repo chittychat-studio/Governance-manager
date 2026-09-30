@@ -48,7 +48,7 @@ ASK = [
     "docker image push x", "make -C infra deploy", "bash deploy.sh", "gcloud run deploy api", "git push heroku main",
     "helm upgrade api ./chart", "python3.11 -m pip install x", "pip --disable-pip-version-check install x",
     "python -m pip -q install x", "pip3.11 install x", "for p in a b; do pip install $p; done",
-    "uv sync", "python -m alembic downgrade -1", "psql -f drop.sql", "printenv AWS_SECRET_ACCESS_KEY",
+    "python -m alembic downgrade -1", "psql -f drop.sql", "printenv AWS_SECRET_ACCESS_KEY",
     "export -p", "set", "declare -x", "psql -c 'COPY users TO STDOUT'", "psql -c 'TRUNCATE users'",
 ]
 ALLOW = [
@@ -68,6 +68,19 @@ def test_deny(installed, cmd):
 
 @pytest.mark.parametrize("cmd", ASK)
 def test_ask(installed, cmd):
+    assert decision(pre(installed, "Bash", command=cmd)) == "ask", cmd
+
+
+@pytest.mark.parametrize("cmd", ["uv sync", "pip install -r requirements.txt", "npm ci"])
+def test_ask_restore_after_manifest_edit(installed, cmd):
+    """Kept from the ASK list (was: `uv sync` always asks). P10a: a restore is exempt only while the manifests match the
+    session baseline, so the attack this case guarded (add a package to a manifest, then sync) still asks."""
+    (installed / "requirements.txt").write_text("fastapi\n")
+    (installed / "package.json").write_text('{"dependencies": {"react": "18"}}')
+    assert decision(pre(installed, "Read", file_path=str(installed / "README.md"))) == "allow"   # session baseline
+    assert decision(pre(installed, "Bash", command=cmd)) == "allow", cmd   # unchanged manifests: restore is fine
+    (installed / "requirements.txt").write_text("fastapi\nreqeusts\n")      # the agent slips a package in
+    (installed / "package.json").write_text('{"dependencies": {"react": "18", "left-pad": "1"}}')
     assert decision(pre(installed, "Bash", command=cmd)) == "ask", cmd
 
 

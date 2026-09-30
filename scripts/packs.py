@@ -59,9 +59,15 @@ def check_signature():
     return True
 
 
+def key_fingerprint():
+    """First 16 hex digits of sha256(public key), to compare with the fingerprint in the release notes (P4a)."""
+    pub_p = PACKS_DIR / "SIGNING_KEY.pub"
+    return hashlib.sha256(pub_p.read_text(encoding="utf-8").strip().encode()).hexdigest()[:16] if pub_p.exists() else None
+
+
 def signature_status():
-    """'signed (verified)' or 'hash-pinned, not signed' (P4a); a bad signature raises."""
-    return "signed (verified)" if check_signature() else "hash-pinned, not signed"
+    """'signed (verified), key <fp>' or 'hash-pinned, not signed' (P4a); a bad signature raises."""
+    return f"signed (verified), key {key_fingerprint()}" if check_signature() else "hash-pinned, not signed"
 
 
 def read_lock():

@@ -53,7 +53,8 @@ def _signed_pack_dir(tmp_path, monkeypatch):
 def test_valid_signature_is_accepted_and_reported(tmp_path, monkeypatch):
     d, _ = _signed_pack_dir(tmp_path, monkeypatch)
     assert packs.read_lock()
-    assert packs.signature_status() == "signed (verified)"
+    assert packs.signature_status() == f"signed (verified), key {packs.key_fingerprint()}"
+    assert len(packs.key_fingerprint()) == 16
 
 
 def test_tampered_lock_is_refused(tmp_path, monkeypatch):

@@ -87,8 +87,8 @@ def hook_handler(script, hook_python, timeout):
     """Exec-form hook: no shell, so it runs the same under Git Bash or PowerShell on Windows.
     Claude Code expands ${CLAUDE_PROJECT_DIR} itself (docs: code.claude.com/docs/en/hooks)."""
     py = default_python() if hook_python in (None, "", "auto") else hook_python
-    return {"type": "command", "command": py,
-            "args": [f"${{CLAUDE_PROJECT_DIR}}/.claude/hooks/{script}"], "timeout": timeout}
+    return {"type": "command", "command": py,   # -B: no .pyc files in .claude/hooks/ to end up in commits
+            "args": ["-B", f"${{CLAUDE_PROJECT_DIR}}/.claude/hooks/{script}"], "timeout": timeout}
 
 
 def is_governor_hook(h):
@@ -143,6 +143,8 @@ def hook_config(gov, rules, disabled):
                                      "rule": r["id"], "text": r["text"]})
         if h.get("path_deny_write"):
             cfg["path_deny_write"].append({"globs": h["path_deny_write"], "rule": r["id"], "text": r["text"]})
+        if h.get("monitor_ws_ask"):
+            cfg["monitor_ws_rule"] = r["id"]
         if h.get("mcp_allowlist"):
             cfg["mcp_allowlist_rule"] = r["id"]
         if h.get("secret_scan"):
@@ -181,6 +183,11 @@ def rules_markdown(gov, rules, disabled, header=MD_HEADER, title="Governor rules
     lines += [f"- {rid}: disabled: {reason}" for rid, reason in disabled.items()
               if rid in {r["id"] for r in rules}] or ["- none"]
     lines += ["", SECTIONS[3], f"- {_tests_line(gov)}"]
+    conv = gov["intake"].get("conventions") or {}
+    if conv.get("branch_rule"):
+        lines.append(f"- Branch rule (from your answers): {conv['branch_rule']}")
+    if conv.get("banned_libs"):
+        lines.append(f"- Do not add these libraries (from your answers): {', '.join(conv['banned_libs'])}")
     if tier["effective"] < tier["computed"]:
         lines.append(f"- Tier lowered from {tier['computed']} by exception; see governance.yaml.")
     return "\n".join(lines) + "\n"
@@ -236,6 +243,10 @@ def preflight(repo, gov):
     problem = test_cmd_problem(gov)
     if problem:
         raise RenderError(problem)
+    from pyfind import unsafe_reason
+    bad_py = unsafe_reason(gov.get("hook_python"), repo) if gov.get("hook_python") not in (None, "", "auto") else None
+    if bad_py:
+        raise RenderError(f"refused: {bad_py}. Edit governance.yaml or re-run init in your own terminal.")
     settings = load_settings(repo) if "claude-code" in gov["packs"] else None
     for name, needed in (("CLAUDE.md", "claude-code" in gov["packs"]), (AGENTS_MD, "codex" in gov["packs"])):
         p = repo / name
@@ -418,4 +429,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(governance.cli(main)())

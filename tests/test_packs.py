@@ -52,6 +52,16 @@ def test_strict_superset():
     assert ids[0] < ids[1] < ids[2]
 
 
+@pytest.mark.parametrize("fam", ["generic", "node", "fastapi-postgres"])
+@pytest.mark.parametrize("agent", ["claude-code", "codex"])
+def test_strict_superset_every_family(fam, agent):
+    """P3 for every family (review: only fastapi-postgres was tested); every family also contains generic (P1a)."""
+    ids = [{r["id"] for r in packs.resolve(f"tier{n}/{fam}/{agent}")[0]} for n in (1, 2, 3)]
+    assert ids[0] < ids[1] < ids[2]
+    for n in (1, 2, 3):
+        assert {r["id"] for r in packs.resolve(f"tier{n}/generic/{agent}")[0]} <= ids[n - 1]
+
+
 @pytest.mark.parametrize("n", [1, 2, 3])
 def test_every_rule_has_p2_fields(n):
     """P2, P2a."""

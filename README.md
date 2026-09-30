@@ -6,9 +6,11 @@ switch its own safety off; it must ask you before deploying, installing packages
 gets told when it writes an API key into your code; and it cannot say "done" while your tests fail.
 Every rule is labelled **enforced** (actually blocked) or **advisory** (only told to the agent). Rules: `SPEC.md`.
 
-Works for any project. Extra rules for JavaScript/TypeScript web apps (Next.js, React, Vite, Node, Supabase,
-Firebase) and for Python FastAPI + Postgres. It is not a sandbox or a compliance certificate, and it has not yet
-been verified in a live session on real projects (see "Status" below).
+Installs on any project: every project gets the general rules above, and JavaScript/TypeScript web apps (Next.js,
+React, Vite, Node, Supabase, Firebase) get a few extra ones. Python projects (FastAPI, Django, Flask) use the general
+rules; there are no Python-only rules yet. It is not a sandbox or a compliance certificate. Tested so far on the eval
+corpora and in deterministic trials on four real repos (docs/TRIALS.md); not yet verified in a live Claude Code
+session.
 
 ## What you need
 

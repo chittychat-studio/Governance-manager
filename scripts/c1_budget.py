@@ -24,7 +24,7 @@ def per_run_cap(path=ROOT / "docs" / "c1-budget.yaml"):
 
 
 def main(argv=None, path=ROOT / "docs" / "c1-budget.yaml"):
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("--runs-this-month", type=int, default=None,
                     help="runs of the compat workflow this calendar month, including the current one")
     args = ap.parse_args(argv)

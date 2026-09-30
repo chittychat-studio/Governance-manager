@@ -62,7 +62,7 @@ def sign(path):
 
 def main(argv=None):
     """CLI (P4, P4a)."""
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--new-key")
     ap.add_argument("--sign-key")

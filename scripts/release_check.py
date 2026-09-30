@@ -27,7 +27,7 @@ def checks():
     out.append(("PACKS.lock matches the pack files", r.returncode == 0, r.stderr.strip()))
     try:
         status = packs.signature_status()
-        out.append(("packs signed and verified (P4a)", status == "signed (verified)", status))
+        out.append(("packs signed and verified (P4a)", status.startswith("signed (verified)"), status))
     except packs.PackError as exc:
         out.append(("packs signed and verified (P4a)", False, str(exc)))
     r = subprocess.run([sys.executable, "-m", "pytest", "-q", "-x"], cwd=ROOT, capture_output=True, text=True)

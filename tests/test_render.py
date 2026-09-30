@@ -8,6 +8,7 @@ import yaml
 import exceptions
 import governance
 import lint
+import init  # noqa: E402
 import render
 from conftest import FIXTURE_INTAKE, install
 
@@ -206,7 +207,8 @@ def test_hooks_are_exec_form_no_shell(installed):
     for event in render.HOOK_EVENTS:
         h = [x for g in s["hooks"][event] for x in g["hooks"] if render.is_governor_hook(x)][0]
         assert h["command"] in ("python", "python3")
-        assert h["args"][0].startswith("${CLAUDE_PROJECT_DIR}/.claude/hooks/governor_")
+        assert h["args"][0] == "-B"   # no .pyc files to commit
+        assert h["args"][1].startswith("${CLAUDE_PROJECT_DIR}/.claude/hooks/governor_")
         assert not any(tok in h["command"] for tok in ("exec", "$p", "||", ";"))
 
 
@@ -220,11 +222,28 @@ def test_old_shell_form_entries_are_replaced(tmp_path):
 
 def test_lint_fails_when_hook_python_missing(installed):
     gov = governance.read(installed)
-    gov["hook_python"] = "no-such-python-xyz"
+    gov["hook_python"] = "/no-such-dir/python3"   # absolute and outside the repo, so V6a allows it; it just doesn't run
     governance.write(installed, gov)
     render.render(installed)
     fails, warns = lint.lint(installed)
     assert any("does not start Python" in f and "NOT block" in f for f in fails)
+
+
+@pytest.mark.parametrize("bad", ["./fakepy", "fakepy", "python3 -c x", "{repo}/fakepy"])
+def test_hook_python_from_repo_is_never_run(installed, bad):
+    """V6a (review finding): a cloned repo's governance.yaml must not make Governor run the repo's own script."""
+    fake = installed / "fakepy"
+    fake.write_text("#!/bin/sh\ntouch FAKEPY_RAN\necho '[\"governor-ok\", 3, 11]'\n")
+    fake.chmod(0o755)
+    gov = governance.read(installed)
+    gov["hook_python"] = bad.replace("{repo}", str(installed))
+    governance.write(installed, gov)
+    with pytest.raises(render.RenderError, match="V6a"):
+        render.render(installed)
+    assert any("V6a" in f for f in lint.lint(installed)[0])
+    code, lines = init.install(installed, {"exposure": "public", "tenancy": "single"}, host="claude-code")
+    assert code == 4 and "V6a" in lines[0]
+    assert not (installed / "FAKEPY_RAN").exists()
 
 
 def test_hook_python_recorded(installed):

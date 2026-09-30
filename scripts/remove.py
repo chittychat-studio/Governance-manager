@@ -26,9 +26,10 @@ def _without_block(text):
     """Text with Governor's marked block cut out, or None if there is no block."""
     if render.BLOCK_START not in text or render.BLOCK_END not in text:
         return None
+    nl = "\r\n" if "\r\n" in text else "\n"   # keep the file's own line endings
     pre, rest = text.split(render.BLOCK_START, 1)
     after = rest.split(render.BLOCK_END, 1)[1]
-    return (pre.rstrip("\r\n") + ("\n" if pre.strip() else "") + after.lstrip("\r\n")).rstrip() + "\n"
+    return (pre.rstrip("\r\n") + (nl if pre.strip() else "") + after.lstrip("\r\n")).rstrip("\r\n") + nl
 
 
 def plan(repo, purge=False):
@@ -103,7 +104,15 @@ def apply(repo, acts):
                     del hk[event]
             if "hooks" in data and not data["hooks"]:
                 del data["hooks"]
-            if data:
+            backup = repo / render.BACKUP
+            try:
+                original = json.loads(backup.read_text(encoding="utf-8-sig")) if backup.exists() else None
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                original = None
+            if original is not None and original == data:
+                path.write_bytes(backup.read_bytes())   # nothing changed since: give back the user's exact bytes
+                backup.unlink()                          # and the backup is now redundant
+            elif data:
                 path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
             else:
                 path.unlink()   # Governor created it and nothing of yours is in it
@@ -115,6 +124,7 @@ def apply(repo, acts):
             text = render.read_user_text(path)
             with open(path, "w", encoding="utf-8", newline="") as fh:
                 fh.write(_without_block(text))
+    shutil.rmtree(repo / ".claude" / "hooks" / "__pycache__", ignore_errors=True)   # left by older hook versions
     for d in (repo / ".claude" / "hooks", repo / ".claude" / "rules", repo / ".claude",
               repo / ".github" / "workflows", repo / ".github"):
         if d.is_dir() and not any(d.iterdir()):
@@ -122,7 +132,7 @@ def apply(repo, acts):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Remove Governor from a repository (SPEC U1)")
+    ap = argparse.ArgumentParser(allow_abbrev=False, description="Remove Governor from a repository (SPEC U1)")
     ap.add_argument("repo")
     ap.add_argument("--yes", action="store_true", help="really remove (otherwise only show the plan)")
     ap.add_argument("--purge", action="store_true", help="also delete governance.yaml")

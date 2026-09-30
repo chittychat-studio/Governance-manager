@@ -30,7 +30,8 @@ def git_user(repo):
         r = None
     email = r.stdout.strip() if r and r.returncode == 0 else ""
     if not email:
-        raise ExceptionRefused("refused: git config user.email is not set (X1)")
+        raise ExceptionRefused("refused: Governor records who made each exception, and git does not know your email "
+                               "yet. Set it once with: git config --global user.email \"you@example.com\" (X1)")
     return email
 
 
@@ -65,7 +66,7 @@ def add(repo, rule=None, tier=None, reason="", today=None, user=None):
 
 def main(argv=None):
     """CLI (X1-X4)."""
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("repo")
     ap.add_argument("--rule")
     ap.add_argument("--tier", type=int)
@@ -81,4 +82,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(governance.cli(main)())

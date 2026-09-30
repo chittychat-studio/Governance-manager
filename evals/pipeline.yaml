@@ -47,7 +47,7 @@ scenarios:
     base: api
     steps:
       - {do: init, answers: {exposure: public, tenancy: single}, expect: ok, tier: 3}
-      - {do: init, answers: {exposure: internal, tenancy: single}, expect: refused, contains: "exceptions.py --tier"}
+      - {do: init, answers: {exposure: internal, tenancy: single}, expect: refused, contains: "/governor:except --tier"}
       - {do: except, tier: 2, reason: "Service moved behind the VPN; no public ingress.", expect: ok}
       - {do: init, answers: {exposure: internal, tenancy: single}, expect: ok, tier: 2}
       - {do: report, expect: contains, text: "tier lowered to 2"}

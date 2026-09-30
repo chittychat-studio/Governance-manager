@@ -55,6 +55,9 @@ def lint(repo):
         fails.append(f"V2: {exc}")
         return fails, warns
     _lint_consistency(gov, fails)
+    from pyfind import unsafe_reason
+    if gov.get("hook_python") not in (None, "", "auto") and unsafe_reason(gov["hook_python"], repo):
+        fails.append(f"V6: governance.yaml {unsafe_reason(gov['hook_python'], repo)}")
     managed_p = repo / render.MANAGED
     if not managed_p.exists():
         return fails + ["V1: rendered files missing (run render.py)"], warns
@@ -355,8 +358,11 @@ def _lint_claude(repo, gov, managed, fails, warns):
         if not ours:
             fails.append(f"V6: {event} hook not registered in settings.json")
         pythons |= {h.get("command", "") for h in ours if h.get("args")}
+    from pyfind import unsafe_reason
     for py in sorted(pythons):
-        if not works(py):
+        if unsafe_reason(py, repo):
+            fails.append(f"V6: {unsafe_reason(py, repo)}")
+        elif not works(py, repo):
             fails.append(f"V6: hook interpreter '{py}' does not start Python 3.8+ here; hooks would error and "
                          "NOT block. Set hook_python in governance.yaml and re-render.")
     for event, groups in hooks.items():
@@ -389,4 +395,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(governance.cli(main)())

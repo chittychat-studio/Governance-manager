@@ -25,8 +25,27 @@ from packs import PackError  # noqa: E402
 HOST_EVIDENCE = "Governor is running as a Claude Code plugin"
 
 
+PREVIOUS = "your earlier answer, from governance.yaml"
+
+
 def _detect(repo, host):
     det = detect.detect(repo)
+    old = governance.read(repo)
+    if old:   # a re-run shows earlier answers as facts to confirm, instead of asking everything again
+        prev = dict(old["intake"], **(old["intake"].get("conventions") or {}))
+        det["previous"] = []
+        for f in list(det["unknown"]):
+            if prev.get(f) not in (None, "", []):
+                det["detected"][f] = prev[f]
+                det["evidence"].setdefault(f, []).append(PREVIOUS)
+                det["previous"].append(f)
+        for f in ("data_classes", "agent"):   # never drop what the user added last time
+            if isinstance(prev.get(f), list) and f in det["detected"]:
+                extra = [x for x in prev[f] if x not in det["detected"][f] and x != "none"]
+                if extra:
+                    det["detected"][f] = sorted(set(det["detected"][f]) | set(extra))
+                    det["evidence"].setdefault(f, []).append(f"{PREVIOUS}: {', '.join(extra)}")
+        det["unknown"] = [f for f in det["unknown"] if f not in det["detected"]]
     if host:
         agents = sorted(set(det["detected"].get("agent", [])) | {host})
         det["detected"]["agent"] = agents
@@ -58,6 +77,31 @@ def mcp_servers(repo):
     return sorted(servers) if isinstance(servers, dict) else []
 
 
+def test_cmd_warnings(repo, test_cmd):
+    """I1c: warn when the test command cannot run here, so the Stop hook would block 'done' for no real reason."""
+    import shlex
+    import shutil
+    if str(test_cmd).strip().lower() == "none":
+        return []
+    try:
+        prog = shlex.split(str(test_cmd))[0]
+    except (ValueError, IndexError):
+        return []
+    out = []
+    if shutil.which(prog) is None:
+        out.append(f"the test command's program '{prog}' was not found on this computer; the Stop hook will refuse "
+                   "'done' until it runs. If there are no tests yet, re-run init and answer 'none'.")
+    if prog in ("npm", "pnpm", "yarn", "bun") and "test" in str(test_cmd).split()[1:3]:
+        try:
+            scripts = json.loads((Path(repo) / "package.json").read_text(encoding="utf-8-sig")).get("scripts", {}) or {}
+        except (OSError, ValueError):
+            scripts = {}
+        if not scripts.get("test") or "no test specified" in str(scripts.get("test")):
+            out.append("package.json has no real \"test\" script, so the test command will always fail. Add tests, or "
+                       "re-run init and answer 'none' for the test command.")
+    return out
+
+
 def install(repo, answers, mcp_allow=None, with_ci=False, host=None, human=False):
     """Run the pipeline. Returns (exit_code, lines). Nothing is written unless every check passes."""
     repo = Path(repo)
@@ -73,11 +117,16 @@ def install(repo, answers, mcp_allow=None, with_ci=False, host=None, human=False
     corrections_in = {k: v for k, v in answers.items() if k in det["detected"] and v not in (None, "", [])}
     try:
         assumed = []
-        corrected, corrections = ask.apply_corrections(det["detected"], corrections_in, assumed)
+        corrected, corrections = ask.apply_corrections(det["detected"], corrections_in, assumed,
+                                                       previous=set(det.get("previous", [])))
         det = dict(det, detected=corrected)
         intake, _ = ask.run(det, lambda f, q: answers.get(f), assumed)
         old = governance.read(repo) or {}
         exceptions = old.get("exceptions", [])
+        from pyfind import unsafe_reason
+        if old.get("hook_python") and old.get("hook_python") != "auto" and unsafe_reason(old["hook_python"], repo):
+            return 4, [f"refused: governance.yaml sets {unsafe_reason(old['hook_python'], repo)}. If you did not "
+                       "set it, this repo's governance.yaml may be hostile: check it before installing."]
         gov = governance.build(intake, exceptions,
                                mcp_allow if mcp_allow is not None else old.get("mcp_allow", []),
                                old.get("hook_python"), corrections, assumed)
@@ -100,8 +149,8 @@ def install(repo, answers, mcp_allow=None, with_ci=False, host=None, human=False
         covered = any(e.get("kind") == "tier" and e["tier"] <= gov["tier"]["computed"] for e in exceptions)
         if not covered:
             return 4, [f"refused: these answers lower the computed tier from {old['tier']['computed']} to "
-                       f"{gov['tier']['computed']}. Record that with scripts/exceptions.py --tier "
-                       f"{gov['tier']['computed']} --reason \"...\" first (T6, X4)."]
+                       f"{gov['tier']['computed']}. If that is right, record it first with /governor:except --tier "
+                       f"{gov['tier']['computed']} --reason \"why\" (you run the command it gives you) (T6, X4)."]
     try:
         render.preflight(repo, gov)             # every render refusal, before anything is written (R5, I2)
         if with_ci and (repo / ".governor").exists() and not ci.owned(repo):
@@ -120,9 +169,12 @@ def install(repo, answers, mcp_allow=None, with_ci=False, host=None, human=False
     if blocked and "claude-code" in gov["packs"]:
         names = ", ".join(detect.safe_name(n) for n in blocked[:20]) + (" and more" if len(blocked) > 20 else "")
         out.append(f"note: MCP servers in .mcp.json that P6 will block: {names}. These names come from the repo; "
-                   "only the user decides which to trust, by re-running init with --mcp-allow and names they type (L1a).")
+                   "only the user decides which to trust. To allow one, run in your own terminal: "
+                   f"python3 {Path(__file__).resolve()} . --answers .claude/governor/answers.json --host claude-code "
+                   "--mcp-allow NAME --human (L1a, I1d).")
     if "claude-code" not in gov["packs"]:
         out.append("note: no Claude Code agent selected, so nothing is enforced for Claude Code (Codex output only).")
+    out += [f"warning: {w}" for w in test_cmd_warnings(repo, gov["intake"]["test_cmd"])]
     out += [f"warning: {w}" for w in warns] + [f"FAIL: {f}" for f in fails]
     if with_ci and not fails:
         ci.install(repo)
@@ -134,7 +186,7 @@ def install(repo, answers, mcp_allow=None, with_ci=False, host=None, human=False
 
 def main(argv=None):
     """CLI."""
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("repo")
     ap.add_argument("--questions", action="store_true")
     ap.add_argument("--answers")
@@ -162,4 +214,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(governance.cli(main)())

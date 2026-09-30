@@ -146,7 +146,14 @@ def _split_compound(cmd):
         cur.append(ch)
         i += 1
     parts.append("".join(cur))
-    return [p.strip() for p in parts if p.strip()]
+    out = [p.strip() for p in parts if p.strip()]
+    # Fail closed where quote tracking can be fooled ($'..' escapes, PowerShell backtick escapes, an unterminated
+    # quote): also split naively on every operator. Extra segments can only make a rule match, never hide one (P7).
+    if quote is not None or "$'" in cmd or "`" in cmd:
+        for p in re.split(r"&&|\|\||[;&|\n\r()`{}]", cmd):
+            if p.strip() and p.strip() not in out:
+                out.append(p.strip())
+    return out
 
 
 def expand_braces(s, limit=16):
@@ -293,33 +300,66 @@ def _normalise_one(seg, depth, tool="Bash"):
     return [" ".join(toks)] + out
 
 
-def manifests_clean(root, globs):
-    """P10a: True only if git reports no uncommitted change to any manifest/lock file. Outside git, on any git
-    error or timeout: False, so the dependency rule still asks (fail closed)."""
-    import subprocess
+MANIFEST_SKIP = {".git", "node_modules", ".venv", "venv", "env", "__pycache__", "dist", "build", ".next", ".governor",
+                 ".claude", ".tox", ".mypy_cache", ".pytest_cache", "site-packages"}
+
+
+def manifest_digest(root, globs, limit=5000):
+    """P10a: hash of every manifest/lock file under root (names matching globs), or None if it cannot be computed.
+    Pure filesystem: runs no git (a repo's git config could run code)."""
+    import fnmatch
+    import hashlib
+    h, seen = hashlib.sha256(), 0
     try:
-        r = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all", "--",
-                            *[f":(glob)**/{g}" for g in globs]], capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return r.returncode == 0 and not r.stdout.strip()
+        for dirpath, dirs, files in os.walk(root):
+            dirs[:] = sorted(d for d in dirs if d not in MANIFEST_SKIP)
+            for name in sorted(files):
+                seen += 1
+                if seen > limit:
+                    return None
+                if any(fnmatch.fnmatch(name, g) for g in globs):
+                    fp = os.path.join(dirpath, name)
+                    h.update(os.path.relpath(fp, root).replace("\\", "/").encode() + b"\0")
+                    with open(fp, "rb") as fh:
+                        h.update(fh.read())
+    except OSError:
+        return None
+    return h.hexdigest()
+
+
+def manifests_unchanged(event, root, globs):
+    """P10a: True only if the manifests are byte-identical to the baseline recorded at this session's first tool call.
+    No baseline, an unreadable tree or a state write failure: False (the rule asks)."""
+    base = read_state(event, "manifests", None)
+    return isinstance(base, str) and base == manifest_digest(root, globs)
+
+
+def record_manifest_baseline(event, root, globs):
+    """Record the session baseline once, at the first tool call Governor sees in a session (P10a)."""
+    if read_state(event, "manifests", None) is None:
+        d = manifest_digest(root, globs)
+        if d:
+            write_state(event, "manifests", d)
 
 
 def strip_comments(cmd):
-    """P7b: drop shell comments (# at the start of a word, outside quotes, to end of line), as the shell does."""
-    out, quote, i, cmd = [], None, 0, str(cmd)
+    """P7b: drop shell comments (# at the start of a word, outside quotes, to end of line), but only when the command
+    is plain enough that the result is certain. Backslashes, $'...' quoting, backticks (PowerShell escape, bash
+    substitution), heredocs or unbalanced quotes: the command is returned unchanged, so a comment can only make
+    a rule match (ask or deny), never hide a command."""
+    cmd = str(cmd)
+    if "#" not in cmd or any(x in cmd for x in ("\\", "$'", "`", "<<", "${", "$(", "$[")) or \
+            cmd.count("'") % 2 or cmd.count('"') % 2:
+        return cmd.rstrip()
+    out, quote, i = [], None, 0
     while i < len(cmd):
         c = cmd[i]
         if quote:
             if c == quote:
                 quote = None
-            elif c == "\\" and quote == '"' and i + 1 < len(cmd):
-                out.append(c)
-                i += 1
-                c = cmd[i]
         elif c in "'\"":
             quote = c
-        elif c == "#" and (i == 0 or cmd[i - 1] in " \t\n;|&(") and cmd[i + 1:i + 2] != ">":
+        elif c == "#" and (i == 0 or cmd[i - 1] in " \t\n;|&("):
             nl = cmd.find("\n", i)
             if nl < 0:
                 break
@@ -327,6 +367,8 @@ def strip_comments(cmd):
             continue
         out.append(c)
         i += 1
+    if quote:
+        return cmd.rstrip()
     return "".join(out).rstrip()
 
 
@@ -492,6 +534,12 @@ def _is_read_only(toks):
     return False
 
 
+def _abbrev_of(tok, flag):
+    """True if tok is flag or any abbreviation argparse could expand to it (--h, --hu, ... ; also --flag=x)."""
+    t = str(tok).lower().split("=", 1)[0]
+    return len(t) >= 3 and t.startswith("--") and flag.startswith(t)
+
+
 def guard_hit(cmd, tool="Bash"):
     """True if a shell command could modify Governor's guardrails or run its admin scripts (P9)."""
     for variant in expand_braces(strip_comments(cmd)):
@@ -515,9 +563,9 @@ def guard_hit(cmd, tool="Bash"):
             if any(os.path.basename(t.replace("\\", "/")) in GOVERNOR_ADMIN_SCRIPTS for t in toks):
                 return True
             if any(os.path.basename(t.replace("\\", "/")) == "remove.py" for t in toks) and \
-                    any(t.lower() in ("--yes", "-y") for t in toks):
+                    any(t.lower() == "-y" or _abbrev_of(t, "--yes") for t in toks):
                 return True   # U1: removing Governor is the user's action; the dry run stays allowed
-            if any(t.lower().split("=", 1)[0] == "--human" for t in toks) and \
+            if any(_abbrev_of(t, "--human") for t in toks) and \
                     any(os.path.basename(t.replace("\\", "/")) in GOVERNOR_SCRIPTS for t in toks):
                 return True
             # redirections write whatever the program

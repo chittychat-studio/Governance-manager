@@ -18,7 +18,9 @@ MAX_UNTRACKED_BYTES = 5_000_000
 
 
 def _git(root, *args):
-    r = subprocess.run(["git", *args], cwd=root, capture_output=True, timeout=60)
+    # A repo's git config could run code (core.fsmonitor); switch that off for Governor's own git calls.
+    r = subprocess.run(["git", "-c", "core.fsmonitor=", "-c", "core.untrackedCache=false", "--no-optional-locks",
+                        *args], cwd=root, capture_output=True, timeout=60)
     if r.returncode != 0:
         raise OSError("git failed")
     return r.stdout

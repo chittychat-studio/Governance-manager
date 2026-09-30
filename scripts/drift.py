@@ -77,7 +77,7 @@ def check(repo):
 
 def main(argv=None):
     """CLI (D1-D2a)."""
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("repo")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
@@ -90,9 +90,9 @@ def main(argv=None):
         for f in res["failures"]:
             print("DRIFT:", f)
         print("drift: none" if not res["failures"] else f"drift: {len(res['failures'])} problem(s); "
-              "re-run detect/ask, governance.py and render.py")
+              "re-run /governor:init to update the rules")
     return 1 if res["failures"] else 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(governance.cli(main)())

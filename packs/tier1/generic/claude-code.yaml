@@ -58,7 +58,7 @@ rules:
         - '^docker-compose\b.*\sconfig\b'
       bash_allow:
         # onboarding steps that name .env without reading it
-        - '^(cp|copy|copy-item)\s+(\S*[/\\])?\.env\.(example|sample|template)\s+(\S*[/\\])?\.env(\.local)?\s*$'
+        - '^(cp|copy|copy-item)\s+(\./)?([\w-][\w.-]*[/\\])*\.env\.(example|sample|template)\s+(\./)?([\w-][\w.-]*[/\\])*\.env(\.local)?\s*$'
         - '^touch\s+(\S*/)?\.env(\.local)?\s*$'
         - '^(uvicorn|fastapi|gunicorn|hypercorn|docker|docker-compose|podman)\b.*--env-file[= ]'
         - '^docker(\s+-\S+)*\s+compose\b.*--env-file[= ]'
@@ -66,7 +66,7 @@ rules:
     spec: P6
     text: Only MCP servers listed in governance.yaml (mcp_allow) may be used; all others are blocked.
     plain: "MCP servers are plug-ins that give the agent new powers (databases, GitHub, the web). Unknown ones can do things you never agreed to."
-    you_can: "To allow a server you trust, run /governor:init again and name it when asked, or re-run init with --mcp-allow NAME in your own terminal."
+    you_can: "Only you can allow a server you trust: in your own terminal (outside Claude Code), in the project folder, run Governor's init.py with --answers .claude/governor/answers.json --host claude-code --mcp-allow NAME --human. /governor:status shows the exact path."
     enforcement: enforced
     mechanism: [hook]
     agents: [claude-code]
@@ -198,7 +198,7 @@ rules:
       path_deny_write: ['.claude/settings.json', '.claude/settings.local.json', '.claude/hooks/*', 'governance.yaml',
                         '.claude/.governor-managed.json', '.claude/governor/state/*', '.claude/governor/governor.log',
                         '~/.claude/settings.json', '~/.claude/settings.local.json', '*/.claude/settings.json',
-                        '*/.claude/settings.local.json']
+                        '*/.claude/settings.local.json', '.git/config', '.git/hooks/*']
   - id: P7-obfuscated-exec
     spec: P7
     text: Encoded or downloaded commands piped into a shell are blocked (they hide what runs).
