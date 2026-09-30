@@ -31,6 +31,14 @@ def family(stack):
     return "generic"
 
 
+def family_rule_ids(fam, tier=3, agent="claude-code"):
+    """Rule ids a family's pack resolves to (I3a: a stack correction may not move to a family with fewer rules)."""
+    try:
+        return {r["id"] for r in resolve(f"tier{tier}/{fam}/{agent}")[0]}
+    except PackError:
+        return set()
+
+
 def pack_id(tier, stack, agent):
     """Lookup key (P1, P1a): the stack's family, never a refusal for an unknown stack."""
     return f"tier{tier}/{family(stack)}/{agent}"
@@ -48,7 +56,7 @@ def select(intake, tier):
 
 def main(argv=None):
     """CLI (P1)."""
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("intake")
     ap.add_argument("--tier", type=int)
     args = ap.parse_args(argv)

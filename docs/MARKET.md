@@ -63,8 +63,8 @@ charging for a service around it might.
 5. **Self-protection and human-only exceptions.** The agent cannot edit its own rules, record exceptions, pass
    `--human` or uninstall Governor; the user does those. Tested against 250+ attack/benign commands and 31 edge
    cases (novice users, prompt injection, jailbreak attempts), in deterministic evals, not yet in live sessions.
-6. **Keyless, offline, project-scoped.** No account, API key or network call; never writes to `~/.claude`; signed
-   packs verified offline. ggshield, Snyk and Rulebricks need accounts.
+6. **Keyless, offline, project-scoped.** No account, API key or network call; never writes to `~/.claude`; packs are
+   hash-pinned today, with offline Ed25519 signing ready but not yet switched on (no release key yet). ggshield, Snyk and Rulebricks need accounts.
 7. **Plain words.** Questions, block messages ("Why / What you can do") and `/governor:status` are written for people
    who have never heard of hooks. The tools above are written for developers.
 
@@ -73,7 +73,8 @@ charging for a service around it might.
 - **Traction:** dcg (6.1k) and cc-safety-net (1.6k) have large head starts and support many agents; Governor
   enforces only in Claude Code.
 - **Pattern breadth:** dcg lists 50+ command packs; Governor's command patterns are narrower.
-- **Not yet proven:** no live-session verification, no real-repo trials yet (docs/TRIALS.md).
+- **Not yet proven:** no live-session verification. Real-repo trials so far are deterministic only (four repos,
+  docs/TRIALS.md round 1), not a week of live agent work.
 - **Platform risk:** each Claude Code release can absorb features (auto mode already did for deploy/force-push).
   Governor's lasting value is the parts a classifier will not give: derived tiers, hard rules, labelled coverage,
   drift and evidence.

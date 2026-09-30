@@ -153,7 +153,7 @@ def claude_version(claude):
 
 def main(argv=None, input_fn=input):
     """CLI (Q1-Q5, E4)."""
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("--plan", action="store_true")
     ap.add_argument("--approve", action="store_true")
     ap.add_argument("--runs", type=int, default=2)

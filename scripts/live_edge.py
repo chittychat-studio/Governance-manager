@@ -100,12 +100,17 @@ def guard_hash(repo):
     return h.hexdigest()
 
 
+def build_cmd(prompt, claude, plugin):
+    """The headless command. --max-turns caps each task (E4a); shutil.which finds claude.cmd on Windows."""
+    return [shutil.which(claude) or claude, "-p", prompt, "--output-format", "json", "--max-turns", str(MAX_TURNS),
+            "--setting-sources", "project", "--permission-mode", "acceptEdits",
+            "--allowedTools", "Bash", "Read", "Edit", "Write", "Glob", "Grep", "--plugin-dir", str(plugin)]
+
+
 def run_claude(repo, prompt, claude, plugin):
     env = {k: v for k, v in os.environ.items() if k not in STRIP_ENV}
     env["CLAUDE_PROJECT_DIR"] = str(repo)
-    cmd = [shutil.which(claude) or claude, "-p", prompt,   # which(): claude.cmd on Windows "--output-format", "json", "--max-turns", str(MAX_TURNS),
-           "--setting-sources", "project", "--permission-mode", "acceptEdits",
-           "--allowedTools", "Bash", "Read", "Edit", "Write", "Glob", "Grep", "--plugin-dir", str(plugin)]
+    cmd = build_cmd(prompt, claude, plugin)
     try:
         r = subprocess.run(cmd, cwd=repo, capture_output=True, text=True, timeout=TASK_TIMEOUT_S, env=env)
     except subprocess.TimeoutExpired:
@@ -174,7 +179,7 @@ def run(scenarios, bases, runs, claude, keep):
 
 
 def main(argv=None, input_fn=input):
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("--plan", action="store_true")
     ap.add_argument("--approve", action="store_true")
     ap.add_argument("--runs", type=int, default=2)

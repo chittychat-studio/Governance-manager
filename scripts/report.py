@@ -54,6 +54,9 @@ def build(repo, today=None, verify_path=VERIFY_RESULT):
              + (" · corrected by the user: " + ", ".join(c["field"] for c in gov.get("corrections", []))
                 if gov.get("corrections") else "")
              + (" · assumed because the answer was 'not sure': " + ", ".join(gov["assumed"]) if gov.get("assumed") else ""),
+             *([f"Integrations: {', '.join(i['integrations'])}"] if i.get("integrations") else []),
+             *([f"Regulations named by the user: {', '.join(i['regulation'])}. Governor maps no rules to them (EV2)."]
+               if i.get("regulation") else []),
              "", "## Rules", "", "| Agent | Enforced | Advisory | Disabled |", "|---|---|---|---|"]
     mappings = []
     for agent in gov["packs"]:
@@ -94,7 +97,7 @@ def build(repo, today=None, verify_path=VERIFY_RESULT):
 
 def main(argv=None):
     """CLI (EV1)."""
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("repo")
     ap.add_argument("--out")
     args = ap.parse_args(argv)
@@ -114,4 +117,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(governance.cli(main)())

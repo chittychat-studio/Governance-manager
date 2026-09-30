@@ -22,7 +22,7 @@ SECRET_PATTERNS = {
     "google-api-key": r"\bAIza[0-9A-Za-z_-]{35}\b",
     "url-credentials": r"\b[a-z][a-z0-9+.-]*://[^:/\s'\"@]*:[^@\s'\"/]{3,}@(?!(localhost|127\.0\.0\.1)\b)[^\s'\"]+",
     # P11: a server secret in a variable the build ships to the browser (Next.js, Vite, Expo, Create React App).
-    "public-env-secret": r"\b(NEXT_PUBLIC|VITE|EXPO_PUBLIC|REACT_APP)_[A-Z0-9_]*(SECRET|SERVICE_ROLE|PRIVATE|PASSWORD)[A-Z0-9_]*\b",
+    "public-env-secret": r"\b(NEXT_PUBLIC|VITE|EXPO_PUBLIC|REACT_APP)_[A-Z0-9_]*(SECRET|SERVICE_ROLE|SERVICE_KEY|PRIVATE|PASSWORD|_SK\b)[A-Z0-9_]*\b",
     # KEY = "value" / KEY: "value" where the name says secret.
     "assigned-secret": r"(?i)\b[A-Za-z0-9_.-]*(password|passwd|pwd|secret|api_?key|access_?key|token|private_?key)"
                        r"[A-Za-z0-9_]*['\"]?\s*[:=]\s*['\"]([^'\"\s]{12,})['\"]",
@@ -40,8 +40,8 @@ def scan_text(text):
     hits = []
     for n, line in enumerate(text.splitlines(), 1):
         for name, pat in SECRET_PATTERNS.items():
-            m = re.search(pat, line)
-            if m and not PLACEHOLDER.search(m.group(0)):
+            # every match on the line: a placeholder earlier on the line must not hide a real value later (P11)
+            if any(not PLACEHOLDER.search(m.group(0)) for m in re.finditer(pat, line)):
                 hits.append((name, n))
                 break
     return hits
@@ -75,9 +75,13 @@ def main():
                 total += [(path.name, name, n) for name, n in scan_text(text)]
             if total:
                 where = ", ".join(f"{f}:{n} ({name})" for f, name, n in total[:10])
+                if all(name == "public-env-secret" for _, name, _ in total):
+                    advice = (" A variable starting NEXT_PUBLIC_, VITE_, EXPO_PUBLIC_ or REACT_APP_ is shipped to every "
+                              "visitor's browser. Rename it without that prefix and use it only in server-side code.")
+                else:
+                    advice = " Remove it and load it from the environment instead." + gc.explain(cfg, cfg["secret_scan_rule"])
                 print(json.dumps({"decision": "block", "reason":
-                                  f"Governor rule {cfg['secret_scan_rule']}: possible secret written at {where}. "
-                                  "Remove it and load it from the environment instead." + gc.explain(cfg, cfg["secret_scan_rule"])}))
+                                  f"Governor rule {cfg['secret_scan_rule']}: possible secret written at {where}.{advice}"}))
             gc.log(event, f"secret_scan ran rule={cfg['secret_scan_rule']} hits={len(total)}")
         return 0
     except Exception as exc:  # noqa: BLE001

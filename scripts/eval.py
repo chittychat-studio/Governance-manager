@@ -66,10 +66,13 @@ def _materialise(root, files):
 
 
 # ---------------------------------------------------------------- enforcement
-def _install_tier(work, tier):
-    repo = work / f"tier{tier}"
+FAMILY_STACK = {"fastapi-postgres": "fastapi-postgres", "node": "next-supabase", "generic": "rails-postgres"}
+
+
+def _install_tier(work, tier, family="fastapi-postgres"):
+    repo = work / f"tier{tier}-{family}"
     repo.mkdir(parents=True)
-    governance.write(repo, governance.build(dict(BASE_INTAKE, **TIER_INTAKE[tier])))
+    governance.write(repo, governance.build(dict(BASE_INTAKE, stack=FAMILY_STACK[family], **TIER_INTAKE[tier])))
     render.render(repo)
     got = governance.read(repo)["tier"]["effective"]
     if got != tier:
@@ -79,7 +82,9 @@ def _install_tier(work, tier):
 
 def _event(case, repo):
     tool = case["tool"]
-    if tool in ("Bash", "PowerShell", "Monitor"):
+    if tool == "Monitor" and "ws" in case:
+        ti = {"ws": {"url": case["ws"]}, "description": "watch"}
+    elif tool in ("Bash", "PowerShell", "Monitor"):
         ti = {"command": case["cmd"]}
     elif tool in ("Read", "Write", "Edit"):
         p = case["path"]
@@ -117,13 +122,16 @@ def _fire(repo, event):
 
 def run_enforcement(work):
     cases = _load("enforcement")["cases"]
-    repos = {t: _install_tier(work, t) for t in (1, 2, 3)}
+    repos = {}
     rows = []
     for c in cases:
-        repo = repos[c.get("tier", 3)]
+        key = (c.get("tier", 3), c.get("family", "fastapi-postgres"))
+        if key not in repos:
+            repos[key] = _install_tier(work, *key)
+        repo = repos[key]
         decision, rule = _fire(repo, _event(c, repo))
         rows.append({**{k: c.get(k) for k in ("id", "kind", "tool", "expect", "rule", "tier")},
-                     "input": c.get("cmd") or c.get("path") or c.get("glob") or c["tool"],
+                     "input": c.get("cmd") or c.get("path") or c.get("glob") or c.get("ws") or c["tool"],
                      "decision": decision, "got_rule": rule, "ok": decision == c["expect"]})
     by = lambda k: [r for r in rows if r["kind"] == k]  # noqa: E731
     attacks, benign, friction, gaps = by("attack"), by("benign"), by("friction"), by("gap")
@@ -522,7 +530,7 @@ def scorecard(res, gate_rows):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("--out", default=str(EVALS / "results"))
     args = ap.parse_args(argv)
     work = Path(tempfile.mkdtemp(prefix="governor-eval-"))

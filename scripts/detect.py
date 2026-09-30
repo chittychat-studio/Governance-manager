@@ -23,6 +23,10 @@ MAX_FILES = 3000
 
 PY_DB = {"psycopg", "psycopg2", "psycopg2-binary", "asyncpg", "psycopg-binary"}
 NODE_DB = {"pg", "postgres", "pg-promise"}
+FRAMEWORKS = (("fastapi", "fastapi", "api"), ("django", "django", "fullstack"), ("flask", "flask", "api"),
+              ("next", "next", "fullstack"), ("nuxt", "nuxt", "fullstack"), ("@sveltejs/kit", "sveltekit", "fullstack"),
+              ("@remix-run/react", "remix", "fullstack"), ("astro", "astro", "fullstack"), ("@nestjs/core", "nest", "api"),
+              ("express", "node-express", "api"))
 # P1a, P11: hosted backends vibe-coded apps use; the stack becomes e.g. next-supabase, react-vite-firebase.
 NODE_BACKENDS = (("supabase", {"@supabase/supabase-js", "@supabase/ssr", "@supabase/auth-helpers-nextjs"}),
                  ("firebase", {"firebase", "firebase-admin"}))
@@ -214,11 +218,7 @@ def detect(repo_dir):
 
     # stack + app_type
     framework = app_type = None
-    for name, fw, at in (("fastapi", "fastapi", "api"), ("django", "django", "fullstack"),
-                         ("flask", "flask", "api"), ("next", "next", "fullstack"), ("nuxt", "nuxt", "fullstack"),
-                         ("@sveltejs/kit", "sveltekit", "fullstack"), ("@remix-run/react", "remix", "fullstack"),
-                         ("astro", "astro", "fullstack"), ("@nestjs/core", "nest", "api"),
-                         ("express", "node-express", "api")):
+    for name, fw, at in FRAMEWORKS:
         if name in alldeps:
             framework, app_type = fw, at
             src = safe_name(alldeps[name])
@@ -246,6 +246,9 @@ def detect(repo_dir):
                     break
         put("stack", f"{framework}-{db}" if db else framework,
             f"{src}: {framework} dependency" + (f"; {dbsrc}" if db else ""))
+        others = [f"{fw} ({safe_name(alldeps[name])})" for name, fw, _ in FRAMEWORKS if name in alldeps and fw != framework]
+        if others:   # monorepo: say what else was seen, so the user can correct the stack if needed
+            evidence["stack"].append(f"also found: {', '.join(others)}; the general rules cover every part")
         if app_type:
             put("app_type", app_type, f"{src}: {framework} implies {app_type}")
 
@@ -337,7 +340,7 @@ def detect(repo_dir):
 
 def main(argv=None):
     """CLI entry point (I3)."""
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(allow_abbrev=False, description=__doc__.splitlines()[0])
     ap.add_argument("repo")
     ap.add_argument("--out")
     args = ap.parse_args(argv)

@@ -126,7 +126,7 @@ def audit(repo, answers=None):
 
 def main(argv=None):
     """CLI (DR1)."""
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("repo")
     ap.add_argument("--answers")
     ap.add_argument("--json", action="store_true")
@@ -152,4 +152,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(governance.cli(main)())

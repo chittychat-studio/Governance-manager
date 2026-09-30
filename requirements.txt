@@ -1,2 +1,2 @@
-# Runtime deps for scripts/ (not hooks: hooks are stdlib-only, P5).
+# Development only (tests, evals, verify). Governor itself needs nothing beyond Python 3.11 (E8).
 pyyaml>=6

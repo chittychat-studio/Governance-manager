@@ -123,7 +123,7 @@ def test_tier_drop_needs_an_exception(tmp_path):
     assert init.install(r, {"exposure": "public", "tenancy": "single"}, host="claude-code")[0] == 0
     assert governance.read(r)["tier"]["computed"] == 3
     code, lines = init.install(r, {"exposure": "internal", "tenancy": "single"}, host="claude-code")
-    assert code == 4 and "exceptions.py --tier 2" in lines[0]
+    assert code == 4 and "/governor:except --tier 2" in lines[0]
     exceptions.add(r, tier=2, reason="Moved behind the VPN; no public ingress any more.", user="a@b.c")
     code, lines = init.install(r, {"exposure": "internal", "tenancy": "single"}, host="claude-code")
     assert code == 0, lines
@@ -297,10 +297,23 @@ def test_restore_is_allowed_only_while_manifests_are_clean(tmp_path):
     assert _decision(r, "npm ci") == "ask"   # any edited manifest makes restores ask
 
 
-def test_restore_outside_git_still_asks(tmp_path):
+def test_restore_baseline_does_not_depend_on_git(tmp_path):
+    """P10a (changed from the git check): the session baseline decides; committing an edit does not clear it."""
     r = repo_with(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
     init.install(r, {"exposure": "public", "tenancy": "single"}, host="claude-code")
+    assert _decision(r, "pip install -r requirements.txt") == "allow"   # no git needed; baseline = current files
+    (r / "requirements.txt").write_text("fastapi\npsycopg\npytest\nreqeusts\n")
     assert _decision(r, "pip install -r requirements.txt") == "ask"
+    for cmd in (["git", "init", "-q"], ["git", "add", "-A"],
+                ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "sneak"]):
+        subprocess.run(cmd, cwd=r, check=True, capture_output=True)
+    assert _decision(r, "pip install -r requirements.txt") == "ask"   # review finding: committing must not clear it
+
+
+def test_restore_after_cd_asks(tmp_path):
+    r = _git_repo(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    assert _decision(r, "cd /tmp && npm install") == "ask"
+    assert _decision(r, "pnpm -C /tmp install") == "ask"
 
 
 def test_comments_are_ignored_both_ways(tmp_path):
@@ -310,3 +323,106 @@ def test_comments_are_ignored_both_ways(tmp_path):
     assert _decision(r, "cat .env # harmless") == "deny"
     assert _decision(r, "echo '#' ; rm -rf src") == "deny"
 
+
+
+# ---- v0.2.0 review round (P7b, I1d, U1, P10a, P10b, V6a, P11, I3a, I1e, I5b, S1, EV4, U1 bytes, E4a)
+@pytest.mark.parametrize("cmd,tool", [(r"echo a\ #; rm -rf src", "Bash"), (r"echo $'\'' 'x #' ; rm -rf src", "Bash"),
+                                      ("echo ${x:-a #}; rm -rf ~", "Bash"), ("echo $(echo a #); cat .env", "Bash"),
+                                      ('echo "a`" #"; Remove-Item -Recurse -Force src', "PowerShell")])
+def test_comment_tricks_cannot_hide_commands(tmp_path, cmd, tool):
+    r = _git_repo(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    assert _decision(r, cmd, tool) == "deny", cmd
+
+
+def test_abbreviated_options_are_refused_and_guarded(tmp_path):
+    import remove
+    with pytest.raises(SystemExit):
+        remove.main([str(tmp_path), "--ye"])
+    with pytest.raises(SystemExit):
+        init.main([str(tmp_path), "--answers", "a.json", "--hum"])
+    r = _git_repo(tmp_path / "r", {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    for cmd in ("python3 scripts/remove.py . --ye", "python3 init.py . --hu", "python render.py . --huma=1"):
+        assert _decision(r, cmd) == "deny", cmd
+
+
+def test_monitor_websocket_asks_at_tier3(tmp_path):
+    r = _git_repo(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    res = _pretool(r, {"tool_name": "Monitor", "cwd": str(r), "tool_input": {"ws": {"url": "wss://x.invalid/a"}}})
+    assert res.stdout.strip() and '"ask"' in res.stdout
+
+
+def test_stack_correction_cannot_lose_rules_and_not_sure_keeps_detected():
+    import ask as ask_
+    from intake import IntakeError
+    with pytest.raises(IntakeError, match="I3a"):
+        ask_.apply_corrections({"stack": "next-supabase"}, {"stack": "generic"}, [])
+    out, _ = ask_.apply_corrections({"stack": "next-supabase"}, {"stack": "not sure"}, [])
+    assert out["stack"] == "next-supabase"
+
+
+@pytest.mark.parametrize("raw,want", [("Public", "public"), ("I am not sure.", "public")])
+def test_everyday_answers(raw, want):
+    import ask as ask_
+    assert ask_.parse_answer("exposure", raw, []) == want
+    assert ask_.parse_answer("stack", "React", []) == "node"
+    assert ask_.parse_answer("test_cmd", "i dont know", []) == "none"
+    assert "javascript" in ask_.OPTION_HELP["stack"] and "not sure" in ask_.OPTION_HELP["stack"]
+
+
+def test_live_edge_keeps_its_turn_cap():
+    import live_edge
+    cmd = live_edge.build_cmd("hi", "claude", ".")
+    assert cmd[cmd.index("--max-turns") + 1] == str(live_edge.MAX_TURNS) and "--output-format" in cmd
+
+
+def test_damaged_governance_gives_a_plain_refusal(tmp_path):
+    r = _git_repo(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    for text in ("", "intake: 1\nintake: 2\n", "tier: 3\n"):
+        (r / "governance.yaml").write_text(text)
+        res = subprocess.run([sys.executable, str(ROOT / "scripts/status.py"), str(r)], capture_output=True, text=True)
+        assert res.returncode == 5 and "damaged" in res.stderr and "Traceback" not in res.stderr, text
+
+
+def test_rerun_shows_earlier_answers_instead_of_asking(tmp_path):
+    r = repo_with(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    init.install(r, {"exposure": "internal", "tenancy": "multi"}, host="claude-code")
+    q = init.questions(r, "claude-code")
+    assert {"exposure", "tenancy"} <= {c["field"] for c in q["confirm"]}
+    assert not {"exposure", "tenancy"} & {x["field"] for x in q["questions"]}
+
+
+def test_status_lists_hard_blocks_as_blocked_and_shows_friction(tmp_path):
+    import status as status_
+    r = _git_repo(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    _decision(r, "rm -rf src")
+    text = "\n".join(status_.build(r)[0])
+    blocked, asked = text.split("The agent must ask you first before:")
+    assert "Do not read secret files" in blocked.split("The agent is blocked from:")[1]
+    assert "P6-rm-rf: 1 blocked" in text
+
+
+def test_report_shows_friction(tmp_path):
+    import report as report_
+    r = _git_repo(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    _decision(r, "rm -rf src")
+    assert "P6-rm-rf: 1 blocked" in report_.build(r)
+
+
+def test_remove_restores_original_bytes(tmp_path):
+    import remove
+    r = repo_with(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    (r / ".claude").mkdir()
+    (r / ".claude/settings.json").write_bytes(b'{"permissions":{"allow":["Bash(ls)"]}}')
+    (r / "AGENTS.md").write_bytes(b"# notes\r\nuse pnpm\r\n")
+    init.install(r, {"exposure": "public", "tenancy": "single", "agent": ["claude-code", "codex"]}, host="claude-code")
+    remove.main([str(r), "--yes", "--purge"])
+    assert (r / ".claude/settings.json").read_bytes() == b'{"permissions":{"allow":["Bash(ls)"]}}'
+    assert (r / "AGENTS.md").read_bytes() == b"# notes\r\nuse pnpm\r\n"
+    assert not (r / ".claude/settings.json.governor-backup").exists()
+
+
+def test_test_cmd_warnings(tmp_path):
+    r = repo_with(tmp_path, {"package.json": json.dumps({"dependencies": {"next": "14"}})})
+    assert any("no real" in w for w in init.test_cmd_warnings(r, "npm test"))
+    assert any("not found" in w for w in init.test_cmd_warnings(r, "no-such-runner-xyz run"))
+    assert init.test_cmd_warnings(r, "none") == []

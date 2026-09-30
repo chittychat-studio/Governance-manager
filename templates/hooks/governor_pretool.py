@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import governor_common as gc  # noqa: E402
 
 WRITE_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+CD_IN = re.compile(r"(^|[;&|(]\s*|\s)(cd|pushd|set-location|sl|chdir)\s", re.I)
 NO_WORKAROUND = ("Do not look for another way to do this; tell the user what was blocked and why "
                  "(Governor rule, SPEC L5).")
 
@@ -28,11 +29,15 @@ def decide(event, cfg):
     if not isinstance(ti, dict):
         raise ValueError("tool_input is not an object")
     root = gc.project_dir(event)
+    for globs in (cfg.get("allow_if_clean") or {}).values():
+        gc.record_manifest_baseline(event, root, globs)   # P10a: first tool call of the session sets the baseline
     if tool.startswith("mcp__") and cfg.get("mcp_allowlist_rule"):
         server = tool.split("__")[1] if tool.count("__") >= 2 else tool
         if server not in cfg.get("mcp_allow", []):
             return "deny", cfg["mcp_allowlist_rule"], f"MCP server '{server}' is not in mcp_allow"
-    if tool in gc.SHELL_TOOLS:
+    if tool == "Monitor" and ti.get("ws") and cfg.get("monitor_ws_rule"):
+        return "ask", cfg["monitor_ws_rule"], "Monitor opens a WebSocket connection (outbound network)"
+    if tool in gc.SHELL_TOOLS and (tool != "Monitor" or "command" in ti):
         cmd = ti.get("command", "")
         if not isinstance(cmd, str):
             raise ValueError("command is not a string")
@@ -55,8 +60,8 @@ def decide(event, cfg):
                     continue
                 globs = (cfg.get("allow_if_clean") or {}).get(rule["rule"])
                 if exempt and globs and any(a.search(s) for s in hits for a in exempt) and \
-                        not gc.manifests_clean(root, globs):
-                    exempt = []   # P10a: an edited manifest may have added a package, so restores ask too
+                        (not gc.manifests_unchanged(event, root, globs) or CD_IN.search(cmd)):
+                    exempt = []   # P10a: manifests changed this session, or a cd moved the restore elsewhere: ask
                 if any(not any(a.search(s) for a in exempt) for s in hits):
                     return kind, rule["rule"], rule["text"]
     for p in gc.tool_paths(ti):

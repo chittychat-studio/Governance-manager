@@ -73,7 +73,8 @@ scenarios:
     steps:
       - {do: init, answers: {<<: *full, exposure: "it's for my cake shop customers"}, expect: refused, contains: "exposure"}
       - {do: init, answers: {<<: *full, tenancy: "🍰 just me"}, expect: refused, contains: "tenancy"}
-      - {do: init, answers: {<<: *full, stack: "I don't know, a website"}, expect: refused, contains: "stack"}
+      - {do: init, answers: {<<: *full, stack: "a website for my cakes"}, expect: refused, contains: "isn't one of the choices"}
+      - {do: init, answers: {<<: *full, stack: "I don't know, a website"}, expect: ok, assumed: [stack]}   # I1e: "don't know" anywhere = not sure
   - id: N05-contradictory-data-classes-refused
     group: novice
     base: idea_only

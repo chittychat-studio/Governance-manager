@@ -55,7 +55,7 @@ def summary_lines(repo, days=14):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("repo")
     ap.add_argument("--days", type=int, default=14)
     args = ap.parse_args(argv)

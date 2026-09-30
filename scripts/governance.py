@@ -52,10 +52,43 @@ def build(intake, exceptions=(), mcp_allow=(), hook_python=None, corrections=(),
     }
 
 
+class GovernanceDamaged(ValueError):
+    """governance.yaml exists but cannot be used; never treated as 'not installed' (T6)."""
+
+
+DAMAGED = ("governance.yaml is damaged ({why}). Restore it with `git checkout governance.yaml` (or from your last "
+           "commit). Do not re-run init on a damaged file: that would drop your tier and exceptions.")
+
+
 def read(repo):
-    """Load <repo>/governance.yaml, or None."""
+    """Load <repo>/governance.yaml, or None if there is none. A file that exists but is empty, unparseable or missing
+    its core sections raises GovernanceDamaged with a plain message."""
     p = Path(repo) / FILENAME
-    return miniyaml.load(p.read_text(encoding="utf-8-sig")) if p.exists() else None
+    if not p.exists():
+        return None
+    try:
+        data = miniyaml.load(p.read_text(encoding="utf-8-sig"))
+    except (miniyaml.YamlError, UnicodeDecodeError, ValueError) as exc:
+        raise GovernanceDamaged(DAMAGED.format(why=str(exc)[:120]))
+    if not isinstance(data, dict):
+        raise GovernanceDamaged(DAMAGED.format(why="it is empty or not a mapping"))
+    intake, tier, packs_ = data.get("intake"), data.get("tier"), data.get("packs")
+    if not isinstance(intake, dict) or not isinstance(tier, dict) or not isinstance(packs_, dict) or \
+            any(k not in intake for k in ("data_classes", "exposure", "tenancy", "test_cmd", "stack")) or \
+            any(k not in tier for k in ("computed", "effective")):
+        raise GovernanceDamaged(DAMAGED.format(why="intake, tier or packs is missing or incomplete"))
+    return data
+
+
+def cli(main):
+    """Wrap a script's main so a damaged governance.yaml prints one plain line instead of a traceback."""
+    def run(*a, **k):
+        try:
+            return main(*a, **k)
+        except GovernanceDamaged as exc:
+            print(f"refused: {exc}", file=sys.stderr)
+            return 5
+    return run
 
 
 def write(repo, gov):
@@ -66,7 +99,7 @@ def write(repo, gov):
 
 def main(argv=None):
     """CLI (R1)."""
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("repo")
     ap.add_argument("--intake", required=True)
     ap.add_argument("--mcp-allow", default=None, help="comma-separated MCP server names")
@@ -93,4 +126,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(cli(main)())

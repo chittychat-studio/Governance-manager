@@ -120,7 +120,7 @@ def run(src, answers):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser()
+    ap = argparse.ArgumentParser(allow_abbrev=False)
     ap.add_argument("repo")
     ap.add_argument("--answer", action="append", default=[], help="field=value (lists: a,b)")
     ap.add_argument("--json")

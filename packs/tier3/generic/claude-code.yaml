@@ -22,8 +22,8 @@ rules:
         - '^py\s+(-\S+\s+)*-m\s+pip(\s+-\S+)*\s+install\b'
         - '^(poetry|uv|pdm|hatch|pipenv|rye)(\s+-\S+)*\s+(add|install|sync)\b'
         - '^uv(\s+-\S+)*\s+pip\s+install\b'
-        - '^(npm|pnpm|bun)(\s+-\S+)*\s+(install|i|add|ci)\b'
-        - '^yarn(\s+-\S+)*\s+(add|install)\b'
+        - '^(npm|pnpm|bun)(\s+\S+)*?\s+(install|i|add|ci)(\s|$)'
+        - '^yarn(\s+\S+)*?\s+(add|install)(\s|$)'
         - '^(pipx|conda|mamba|gem|cargo)(\s+-\S+)*\s+(install|add)\b'
         - '^go(\s+-\S+)*\s+(install|get)\b'
         - '^(install-module|install-package)\b'
@@ -31,24 +31,26 @@ rules:
                        'bun.lockb', 'bun.lock', 'requirements*.txt', 'pyproject.toml', 'poetry.lock', 'uv.lock',
                        'Pipfile', 'Pipfile.lock', 'pdm.lock', 'setup.py', 'setup.cfg']
       bash_allow:
-        # P10a: restoring the dependencies the project already declares (no new package named),
-        # only while the manifests above have no uncommitted change (allow_if_clean)
-        - '^(npm|pnpm|bun)(\s+-\S+)*\s+(install|i|ci)(\s+-\S+)*\s*$'
-        - '^(npm|pnpm|bun)(\s+-\S+)*\s*$'
-        - '^yarn(\s+-\S+)*(\s+install)?(\s+-\S+)*\s*$'
-        - '^(python[\d.]*\s+(-\S+\s+)*-m\s+|py\s+(-\S+\s+)*-m\s+)?pip[\d.]*\s+install(\s+(-r|--requirement|-c|--constraint)\s+\S+|\s+(-e|--editable)\s+(\.{1,2}|\.{0,2}/\S*|[\w.-]+/\S*)|\s+--(upgrade|no-cache-dir|user|quiet|no-deps)|\s+-[qU])+\s*$'
-        - '^(poetry|pdm|pipenv|hatch)(\s+-\S+)*\s+install(\s+-\S+)*\s*$'
-        - '^uv(\s+-\S+)*\s+sync\b(\s+-\S+)*\s*$'
-        - '^uv(\s+-\S+)*\s+pip\s+install(\s+(-r|--requirement)\s+\S+)+\s*$'
+        # P10a: restoring the dependencies the project already declares: plain forms only (no package named, no
+        # --prefix/--registry/-C/--global, no path outside the repo), and only while the manifests above are unchanged
+        # since the session started (allow_if_clean). A `cd` in the same command cancels the exemption.
+        - '^(npm|pnpm|bun)\s+(install|i|ci)(\s+--(frozen-lockfile|immutable|no-audit|no-fund|prefer-offline|silent|legacy-peer-deps|ignore-scripts|production|loglevel[= ]\w+|omit[= ]\w+|include[= ]\w+)|\s+-s)*\s*$'
+        - '^yarn(\s+install)?(\s+--(frozen-lockfile|immutable|no-audit|no-fund|prefer-offline|silent|legacy-peer-deps|ignore-scripts|production|loglevel[= ]\w+|omit[= ]\w+|include[= ]\w+)|\s+-s)*\s*$'
+        - '^(python[\d.]*\s+-m\s+|py(\s+-3(\.\d+)?)?\s+-m\s+)?pip[\d.]*\s+install(\s+(-r|--requirement|-c|--constraint)\s+(\./)?([\w-][\w.-]*/)*(requirements|constraints)[\w.-]*\.(txt|in)|\s+(-e|--editable)\s+(\.|(\./)?([\w-][\w.-]*/)*[\w-][\w.-]*)/?|\s+--(upgrade|no-cache-dir|quiet|no-deps)|\s+-[qU])+\s*$'
+        - '^(poetry|pdm|pipenv)\s+install(\s+--(no-root|sync|dev|no-interaction|frozen-lockfile|deploy|with\s+[\w,-]+|without\s+[\w,-]+|only\s+[\w,-]+))*\s*$'
+        - '^uv\s+sync(\s+--(frozen|locked|all-extras|dev|no-dev|extra\s+[\w-]+|group\s+[\w-]+))*\s*$'
+        - '^uv\s+pip\s+install(\s+(-r|--requirement)\s+(\./)?([\w-][\w.-]*/)*requirements[\w.-]*\.(txt|in))+\s*$'
   - id: P10-webfetch-ask
     spec: P10
     text: Web fetches need human approval.
     plain: "Web pages can contain hidden instructions that try to steer the agent."
     you_can: "Approve pages you trust, like official documentation."
     enforcement: enforced
-    mechanism: [deny_rule]
+    mechanism: [deny_rule, hook]
     agents: [claude-code]
     ask: ['WebFetch']
+    hook:
+      monitor_ws_ask: true   # P10b: Monitor's WebSocket input is outbound network access too
   - id: P10-env-dump
     spec: P10
     text: Dumping the environment (env, printenv, set) needs human approval.
