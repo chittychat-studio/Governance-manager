@@ -32,7 +32,18 @@ BLOCK_START = "<!-- governor:start (generated; edit governance.yaml and re-rende
 BLOCK_END = "<!-- governor:end -->"
 COVERAGE_MD = ".claude/governor/COVERAGE.md"
 BACKUP = ".claude/settings.json.governor-backup"
-SECTIONS = ["## Enforced rules", "## Advisory rules", "## Disabled rules", "## Commands"]
+SECTIONS = ["## Enforced rules", "## Advisory rules", "## Disabled rules", "## Commands", "## Working agreement (advisory)"]
+
+# R7: fixed text, same for every repo; never built from repo content (L1). Advisory: no hook enforces it.
+WORKING_AGREEMENT = [
+    "- Keep replies short and on the goal the user stated. Read and run only what the task needs; "
+    "every extra file and re-run spends the user's token budget.",
+    "- If the request is unclear, or a step would hit a rule above that blocks or asks, stop and ask the user "
+    "one short question first. Never look for another way round a blocked action.",
+    "- Before saying you are done, check the work against the rules above and the Commands line, and say which "
+    "you checked and which you could not.",
+    "- Thank you. Careful work that stays inside these rules is noticed and appreciated.",
+]
 HOOK_EVENTS = {
     "PreToolUse": ("^(Bash|PowerShell|Monitor|Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob)$|^mcp__.*",
                    "governor_pretool.py", 30),
@@ -190,6 +201,7 @@ def rules_markdown(gov, rules, disabled, header=MD_HEADER, title="Governor rules
         lines.append(f"- Do not add these libraries (from your answers): {', '.join(conv['banned_libs'])}")
     if tier["effective"] < tier["computed"]:
         lines.append(f"- Tier lowered from {tier['computed']} by exception; see governance.yaml.")
+    lines += ["", SECTIONS[4], *WORKING_AGREEMENT]
     return "\n".join(lines) + "\n"
 
 
