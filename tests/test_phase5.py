@@ -77,7 +77,7 @@ def test_stale_rule_paths_warn(tmp_path):
 def test_pack_pin_change_is_drift(tmp_path, monkeypatch):
     repo = installed_copy(tmp_path)
     lock = packs.read_lock()
-    lock["tier1/fastapi-postgres/claude-code"] = "0" * 64
+    lock["tier1/generic/claude-code"] = "0" * 64
     monkeypatch.setattr(drift, "read_lock", lambda: lock)
     assert any("differs from the installed pin" in f for f in drift.check(repo)["failures"])
 
@@ -117,9 +117,10 @@ def test_doctor_clean_after_install(tmp_path):
     assert doctor.main([str(repo), "--answers", str(ans)]) == 0
 
 
-def test_doctor_cannot_audit_unknown_stack(tmp_path):
+def test_doctor_audits_js_stack_with_node_pack(tmp_path):
+    """P1a (changed): a React/Vite repo is audited against the node family instead of refused."""
     shutil.copytree(ROOT / "fixtures/detect/react_vite_static", tmp_path / "r")
-    assert doctor.main([str(tmp_path / "r")]) == 2
+    assert doctor.main([str(tmp_path / "r")]) in (0, 1)
 
 
 def test_ci_install_runs_vendored_lint_and_drift(tmp_path):

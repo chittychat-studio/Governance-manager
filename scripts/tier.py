@@ -6,7 +6,7 @@ import json
 import sys
 from pathlib import Path
 
-import yaml
+import miniyaml
 
 ROOT = Path(__file__).resolve().parent.parent
 TIERS_PATH = ROOT / "tiers.yaml"
@@ -14,7 +14,7 @@ TIERS_PATH = ROOT / "tiers.yaml"
 
 def load_tiers(path=TIERS_PATH):
     """Load the versioned tier table (T1)."""
-    return yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    return miniyaml.load(Path(path).read_text(encoding="utf-8"))
 
 
 def _matches(when, intake):

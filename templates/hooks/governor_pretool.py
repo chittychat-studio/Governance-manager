@@ -1,4 +1,4 @@
-"""PreToolUse guard (SPEC P6, P7, P8, P9, P10, L5). Stdlib only (P5).
+"""PreToolUse guard (SPEC P6, P7, P8, P9, P10, P12, L5). Stdlib only (P5).
 
 deny -> exit 2 with the rule id on stderr; ask -> permissionDecision "ask".
 Covers the Bash and PowerShell tools. Any internal error blocks (fail closed); logging can never
@@ -50,7 +50,14 @@ def decide(event, cfg):
             for rule in cfg.get(f"bash_{kind}", []):
                 pat = re.compile(rule["pattern"], re.I)
                 exempt = allow.get(rule["rule"], [])
-                if any(pat.search(s) and not any(a.search(s) for a in exempt) for s in segs):
+                hits = [s for s in segs if pat.search(s)]
+                if not hits:
+                    continue
+                globs = (cfg.get("allow_if_clean") or {}).get(rule["rule"])
+                if exempt and globs and any(a.search(s) for s in hits for a in exempt) and \
+                        not gc.manifests_clean(root, globs):
+                    exempt = []   # P10a: an edited manifest may have added a package, so restores ask too
+                if any(not any(a.search(s) for a in exempt) for s in hits):
                     return kind, rule["rule"], rule["text"]
     for p in gc.tool_paths(ti):
         for rule in cfg.get("path_deny", []):
@@ -76,18 +83,19 @@ def main():
     event = {}
     try:
         event = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace"))
-        decision, rule, text = decide(event, gc.load_config())
+        cfg = gc.load_config()
+        decision, rule, text = decide(event, cfg)
     except Exception as exc:  # noqa: BLE001 - fail closed
         print(f"Governor pretool hook error, blocking (fail closed): {exc}", file=sys.stderr)
         return 2
     if decision is None:
         return 0
     if decision == "deny":
-        print(f"Blocked by Governor rule {rule}: {text} {NO_WORKAROUND}", file=sys.stderr)
+        print(f"Blocked by Governor rule {rule}: {text}{gc.explain(cfg, rule)}\n{NO_WORKAROUND}", file=sys.stderr)
         gc.log(event, f"deny {rule} tool={event.get('tool_name')}")
         return 2
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "ask",
-                                             "permissionDecisionReason": f"Governor rule {rule}: {text}"}}))
+                                             "permissionDecisionReason": f"Governor rule {rule}: {text}{gc.explain(cfg, rule)}"}}))
     gc.log(event, f"ask {rule} tool={event.get('tool_name')}")
     return 0
 

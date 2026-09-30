@@ -1,4 +1,4 @@
-"""Select packs by pure lookup on (tier, stack, agent) (SPEC P1, P4).
+"""Select packs by pure lookup on (tier, family, agent) (SPEC P1, P1a, P4).
 
 Named select_pack.py, not select.py: a scripts/select.py would shadow the stdlib
 `select` module (used by subprocess) for anything run from scripts/.
@@ -11,13 +11,29 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from packs import PackError, resolve  # noqa: E402
+from packs import PACKS_DIR, PackError, resolve  # noqa: E402
 from tier import compute_tier  # noqa: E402
 
 
+# P1a: JavaScript/TypeScript stacks share the node family; anything else without its own pack gets generic.
+NODE_STACKS = {"next", "nextjs", "react", "vite", "react-vite", "node", "nodejs", "express", "node-express", "nuxt",
+               "vue", "svelte", "sveltekit", "remix", "astro", "nest", "nestjs", "javascript", "typescript", "js", "ts"}
+
+
+def family(stack):
+    """The pack family for a stack, by lookup (P1a): exact pack, else node, else generic."""
+    stack = str(stack or "").strip().lower()
+    if stack and (PACKS_DIR / "tier1" / stack).is_dir():
+        return stack
+    first = stack.split("-", 1)[0]
+    if stack in NODE_STACKS or first in NODE_STACKS or (stack.startswith("react-") or stack.startswith("node-")):
+        return "node"
+    return "generic"
+
+
 def pack_id(tier, stack, agent):
-    """Lookup key (P1)."""
-    return f"tier{tier}/{stack}/{agent}"
+    """Lookup key (P1, P1a): the stack's family, never a refusal for an unknown stack."""
+    return f"tier{tier}/{family(stack)}/{agent}"
 
 
 def select(intake, tier):

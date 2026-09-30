@@ -1,0 +1,73 @@
+# Tier 3 = tier 2 + P10 (SPEC P3, P10).
+id: tier3/generic/claude-code
+version: 3
+tier: 3
+stack: generic
+agent: claude-code
+extends: tier2/generic/claude-code
+rules:
+  - id: P10-dependency-add
+    spec: P10
+    text: Adding or installing dependencies needs human approval.
+    plain: "New packages run code on your machine and ship inside your app. A wrong or fake package is a common way in for attackers."
+    you_can: "Check the package name is the one you expect, then approve; say no if you are unsure."
+    enforcement: enforced
+    mechanism: [deny_rule, hook]
+    agents: [claude-code, codex]
+    ask: ['Bash(pip install *)', 'Bash(poetry add *)', 'Bash(uv add *)', 'Bash(uv pip install *)', 'Bash(npm install *)',
+          'Bash(pnpm add *)', 'Bash(yarn add *)']
+    hook:
+      bash_ask:
+        - '^(python[\d.]*\s+(-\S+\s+)*-m\s+)?pip[\d.]*(\s+-\S+)*\s+install\b'
+        - '^py\s+(-\S+\s+)*-m\s+pip(\s+-\S+)*\s+install\b'
+        - '^(poetry|uv|pdm|hatch|pipenv|rye)(\s+-\S+)*\s+(add|install|sync)\b'
+        - '^uv(\s+-\S+)*\s+pip\s+install\b'
+        - '^(npm|pnpm|bun)(\s+-\S+)*\s+(install|i|add|ci)\b'
+        - '^yarn(\s+-\S+)*\s+(add|install)\b'
+        - '^(pipx|conda|mamba|gem|cargo)(\s+-\S+)*\s+(install|add)\b'
+        - '^go(\s+-\S+)*\s+(install|get)\b'
+        - '^(install-module|install-package)\b'
+      allow_if_clean: ['package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock',
+                       'bun.lockb', 'bun.lock', 'requirements*.txt', 'pyproject.toml', 'poetry.lock', 'uv.lock',
+                       'Pipfile', 'Pipfile.lock', 'pdm.lock', 'setup.py', 'setup.cfg']
+      bash_allow:
+        # P10a: restoring the dependencies the project already declares (no new package named),
+        # only while the manifests above have no uncommitted change (allow_if_clean)
+        - '^(npm|pnpm|bun)(\s+-\S+)*\s+(install|i|ci)(\s+-\S+)*\s*$'
+        - '^(npm|pnpm|bun)(\s+-\S+)*\s*$'
+        - '^yarn(\s+-\S+)*(\s+install)?(\s+-\S+)*\s*$'
+        - '^(python[\d.]*\s+(-\S+\s+)*-m\s+|py\s+(-\S+\s+)*-m\s+)?pip[\d.]*\s+install(\s+(-r|--requirement|-c|--constraint)\s+\S+|\s+(-e|--editable)\s+(\.{1,2}|\.{0,2}/\S*|[\w.-]+/\S*)|\s+--(upgrade|no-cache-dir|user|quiet|no-deps)|\s+-[qU])+\s*$'
+        - '^(poetry|pdm|pipenv|hatch)(\s+-\S+)*\s+install(\s+-\S+)*\s*$'
+        - '^uv(\s+-\S+)*\s+sync\b(\s+-\S+)*\s*$'
+        - '^uv(\s+-\S+)*\s+pip\s+install(\s+(-r|--requirement)\s+\S+)+\s*$'
+  - id: P10-webfetch-ask
+    spec: P10
+    text: Web fetches need human approval.
+    plain: "Web pages can contain hidden instructions that try to steer the agent."
+    you_can: "Approve pages you trust, like official documentation."
+    enforcement: enforced
+    mechanism: [deny_rule]
+    agents: [claude-code]
+    ask: ['WebFetch']
+  - id: P10-env-dump
+    spec: P10
+    text: Dumping the environment (env, printenv, set) needs human approval.
+    plain: "Printing all environment variables shows every secret loaded in this terminal."
+    you_can: "Ask the agent for the one variable name it needs instead."
+    enforcement: enforced
+    mechanism: [hook]
+    agents: [claude-code, codex]
+    hook:
+      bash_ask:
+        - '^(env|printenv|set|compgen\s+-v)\s*$'
+        - '^(export|declare|typeset)(\s+-[a-z]*)?\s*$'
+        - '^printenv\b'
+        - '/proc/[^\s]*/environ'
+        - '^(get-childitem|gci|dir|ls|get-item)\s+env:'
+        - '\[(system\.)?environment\]::getenvironmentvariables'
+  - id: P10-synthetic-fixtures
+    spec: P10
+    text: Fixtures use provider test tokens and synthetic records only; never real card, health or personal records.
+    enforcement: advisory
+    mechanism: [instruction]
+    agents: [claude-code, codex]

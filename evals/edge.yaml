@@ -54,13 +54,19 @@ scenarios:
     base: idea_only
     steps:
       - {do: questions, max: 7, no_words: [guardrail, control, security, permission, hook, rule, block, policy]}
-  - id: N03-not-sure-is-refused-with-the-options
+  - id: N03-not-sure-records-the-higher-risk-answer   # I1e (was: refused)
     group: novice
     base: idea_only
     steps:
-      - {do: init, answers: {<<: *full, exposure: "not sure"}, expect: refused, contains: "['public', 'internal']"}
-      - {do: init, answers: {<<: *full, data_classes: "don't know"}, expect: refused, contains: "pii"}
-      - {do: absent, path: governance.yaml}
+      - {do: init, answers: {<<: *full, data_classes: "don't know", exposure: "not sure", tenancy: "idk"}, expect: ok,
+         tier: 3, assumed: [data_classes, exposure, tenancy], contains: "because the answer was 'not sure'"}
+      - {do: report, expect: contains, text: "assumed because the answer was 'not sure'"}
+  - id: N03b-not-sure-never-lowers-a-detected-fact     # I1e + I3a
+    group: novice
+    base: api
+    steps:
+      - {do: init, answers: {data_classes: "not sure", exposure: public, tenancy: single}, expect: ok, tier: 3}
+      - {do: file_contains, path: governance.yaml, text: "auth"}
   - id: N04-free-text-and-emoji-answers-refused
     group: novice
     base: idea_only
@@ -73,12 +79,16 @@ scenarios:
     base: idea_only
     steps:
       - {do: init, answers: {<<: *full, data_classes: [none, payments]}, expect: refused, contains: "none"}
-  - id: N06-unsupported-stack-refused-not-downgraded
+  - id: N06-any-stack-gets-a-pack                      # P1a (was: refused, no pack)
     group: novice
     base: idea_only
     steps:
-      - {do: init, answers: {<<: *full, stack: react-firebase}, expect: refused, contains: "no pack"}
-      - {do: absent, path: .claude}
+      - {do: init, answers: {<<: *full, stack: react-firebase}, expect: ok, tier: 3, pack: tier3/node/claude-code}
+  - id: N06b-plain-stack-words                         # I5b
+    group: novice
+    base: idea_only
+    steps:
+      - {do: init, answers: {<<: *full, stack: "not sure"}, expect: ok, pack: tier3/generic/claude-code, assumed: [stack]}
   - id: N07-idea-only-worst-case-answers-install-tier-3
     group: novice
     base: idea_only
@@ -222,7 +232,8 @@ scenarios:
     base: api
     steps:
       - {do: init, answers: {exposure: public, tenancy: single}, expect: ok}
-      - {do: fire, tool: Bash, cmd: "rm -rf app", expect: deny, message: ["P6-rm-rf", "Do not look for another way", "tell the user"]}
+      - {do: fire, tool: Bash, cmd: "rm -rf app", expect: deny, message: ["P6-rm-rf", "Do not look for another way", "tell the user", "Why: ", "What you can do: "]}
+      - {do: fire, tool: Bash, cmd: "npm install left-pad", expect: ask, message: ["P10-dependency-add", "Why: ", "What you can do: "]}
       - {do: fire, tool: Read, path: .env, expect: deny, message: ["P6-secret-read", "Do not look for another way"]}
       - {do: fire, tool: Write, path: .claude/settings.local.json, expect: deny, message: ["Do not look for another way"]}
   - id: J06-legit-work-still-allowed-after-install

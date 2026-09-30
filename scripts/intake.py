@@ -8,8 +8,9 @@ import sys
 from pathlib import Path
 
 if sys.version_info < (3, 11):  # tomllib and the typing used here need 3.11+
-    sys.exit(f"Governor needs Python 3.11 or newer; this is {sys.version.split()[0]}. "
-             "Install Python 3.11+ and run the command with it.")
+    sys.exit(f"Governor needs Python 3.11 or newer, and this computer has {sys.version.split()[0]}. "
+             "Get it free from https://www.python.org/downloads/ (on Windows, tick 'Add python.exe to PATH' "
+             "during setup), then open a new terminal and try again. Nothing else needs installing (E8).")
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "intake.schema.json"

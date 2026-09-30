@@ -181,6 +181,8 @@ def run_detection(work):
             got = gov["tier"]["effective"] if gov else None
             if code != 0 or got != c["tier"]:
                 problems.append(f"want tier {c['tier']} (code 0), got tier {got} code {code}: {lines[:1]}")
+            if c.get("pack") and gov and gov["packs"]["claude-code"]["pack_id"] != c["pack"]:
+                problems.append(f"want pack {c['pack']}, got {gov['packs']['claude-code']['pack_id']}")
         rows.append({"id": c["id"], "ok": not problems, "problems": problems})
     return {"metrics": {"cases": len(rows), "detection_accuracy": _rate(sum(r["ok"] for r in rows), len(rows))},
             "failures": [r for r in rows if not r["ok"]]}
@@ -374,7 +376,10 @@ def _edge_step(repo, s, state, ed, sid, bases):
         if want == "ok":
             gov = governance.read(repo)
             tier_ok = "tier" not in s or (gov and gov["tier"]["effective"] == s["tier"])
-            return code == 0 and tier_ok and s.get("contains", "") in text, f"code {code}; {lines[:4]}"
+            pack_ok = "pack" not in s or (gov and gov["packs"]["claude-code"]["pack_id"] == s["pack"])
+            assumed_ok = "assumed" not in s or (gov and gov.get("assumed") == s["assumed"])
+            return (code == 0 and tier_ok and pack_ok and assumed_ok and s.get("contains", "") in text,
+                    f"code {code}; {lines[:4]}; assumed {gov.get('assumed') if gov else None}")
         return code != 0 and s.get("contains", "") in text, f"code {code}; {lines[:2]}"
     if do == "questions":
         q = init.questions(repo, "claude-code")

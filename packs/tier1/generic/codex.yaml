@@ -1,0 +1,8 @@
+# Codex pack, tier 1, generic family (SPEC P1, P1a, E7). Advisory for Codex (R6).
+id: tier1/generic/codex
+version: 1
+tier: 1
+stack: generic
+agent: codex
+extends: tier1/generic/claude-code
+rules: []

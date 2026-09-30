@@ -43,6 +43,12 @@ standards.
 - xlogs — read-only scanner, explicitly not a compliance artefact. https://github.com/damnepic/xlogs-cli
 - Paid, team-focused: Snyk, GitGuardian.
 
+## Update 2026-09-29: closest competitors and platform overlap
+See docs/MARKET.md (sources per claim). Closest enforcing tools: dcg, cc-safety-net, Trail of Bits
+claude-code-config, karanb192/claude-code-hooks; vendor hooks from GitGuardian and Snyk. Claude Code auto mode
+(default from v2.1.283) blocks force-push, curl|bash and prod deploys but allows reading .env and installing
+declared dependencies.
+
 ## Chosen position
 Governor = enforced, verified, drift-checked agent governance — not better prose.
 Differentiators vs the above:

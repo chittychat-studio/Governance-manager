@@ -1,0 +1,8 @@
+# Codex pack, tier 1, node family (SPEC P1, P1a, E7). Advisory for Codex (R6).
+id: tier1/node/codex
+version: 1
+tier: 1
+stack: node
+agent: codex
+extends: tier1/node/claude-code
+rules: []

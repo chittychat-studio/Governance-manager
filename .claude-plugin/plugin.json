@@ -1,9 +1,9 @@
 {
   "name": "governor",
   "displayName": "Governor",
-  "version": "0.1.0",
-  "description": "Turns a repo and a short intake into enforced agent governance: permission rules, hooks, rules files, lint, drift and an evidence report.",
+  "version": "0.2.0",
+  "description": "A safety kit for AI coding agents: a few plain questions, then enforced rules that stop the agent wiping folders, reading secrets, force-pushing, deploying or switching its own safety off. Any stack.",
   "author": {"name": "chittychat-studio"},
   "repository": "https://github.com/chittychat-studio/Governance-manager",
-  "keywords": ["governance", "hooks", "permissions", "security"]
+  "keywords": ["governance", "hooks", "permissions", "security", "guardrails", "vibe-coding"]
 }

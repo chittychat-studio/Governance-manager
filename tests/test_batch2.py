@@ -265,3 +265,48 @@ def test_test_cmd_that_cannot_fail_refused(tmp_path, cmd):
     r = repo_with(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
     code, lines = init.install(r, {"exposure": "public", "tenancy": "single", "test_cmd": cmd}, host="claude-code")
     assert code == 4 and "cannot fail" in lines[0], (cmd, lines)
+
+
+# ---- real-repo trial findings (P7b, P10a, P6a): friction removed without reopening the manifest bypass
+def _git_repo(tmp_path, files):
+    r = repo_with(tmp_path, files)
+    code, lines = init.install(r, {"exposure": "public", "tenancy": "single"}, host="claude-code")
+    assert code == 0, lines
+    for cmd in (["git", "init", "-q"], ["git", "add", "-A"],
+                ["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base"]):
+        subprocess.run(cmd, cwd=r, check=True, capture_output=True)
+    return r
+
+
+def _decision(r, cmd, tool="Bash"):
+    res = _pretool(r, {"tool_name": tool, "cwd": str(r), "tool_input": {"command": cmd}})
+    if res.returncode == 2:
+        return "deny"
+    return "ask" if res.stdout.strip() else "allow"
+
+
+def test_restore_is_allowed_only_while_manifests_are_clean(tmp_path):
+    r = _git_repo(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII,
+                             "package.json": json.dumps({"dependencies": {"left": "1"}})})
+    assert _decision(r, "pip install -r requirements.txt") == "allow"
+    assert _decision(r, "npm ci") == "allow"
+    assert _decision(r, "uv sync") == "allow"
+    assert _decision(r, "npm install left-pad") == "ask"
+    (r / "requirements.txt").write_text("fastapi\npsycopg\npytest\nreqeusts\n")   # typosquat slipped in
+    assert _decision(r, "pip install -r requirements.txt") == "ask"
+    assert _decision(r, "npm ci") == "ask"   # any edited manifest makes restores ask
+
+
+def test_restore_outside_git_still_asks(tmp_path):
+    r = repo_with(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    init.install(r, {"exposure": "public", "tenancy": "single"}, host="claude-code")
+    assert _decision(r, "pip install -r requirements.txt") == "ask"
+
+
+def test_comments_are_ignored_both_ways(tmp_path):
+    r = _git_repo(tmp_path, {"requirements.txt": "fastapi\npsycopg\npytest\n", **MODEL_PII})
+    assert _decision(r, "cp .env.example .env   # edit as needed") == "allow"
+    assert _decision(r, "copy .env.example .env  # (cp on macOS)", "PowerShell") == "allow"
+    assert _decision(r, "cat .env # harmless") == "deny"
+    assert _decision(r, "echo '#' ; rm -rf src") == "deny"
+

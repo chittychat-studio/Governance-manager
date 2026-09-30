@@ -1,8 +1,20 @@
 {
-  "tier1/fastapi-postgres/claude-code": "65920f2afc472a0aebd4968cdf721b09d99d2ec1b23dae3b36326437aaef16d5",
-  "tier1/fastapi-postgres/codex": "13a88c1e13fcec9ae967062c9f2e66f30d0ebce3fd91bcd311467b95758017ee",
-  "tier2/fastapi-postgres/claude-code": "1c98076e66ab308dfddfb10bef5778d6a34ae4fcdfa08bd85020a1ba548775a4",
-  "tier2/fastapi-postgres/codex": "05e9c288a193944fe0c9b69cfe37682fc8475be25c04a93698c8c0218c687840",
-  "tier3/fastapi-postgres/claude-code": "7ca2d07fdec6e67326c87e0075c49998d18517d2604001d888cbcb8bde1bf40e",
-  "tier3/fastapi-postgres/codex": "aa01fef0a8de2edb529cbf0ca73d3acb250538226c52f098831a37d805668cd8"
+  "tier1/fastapi-postgres/claude-code": "2cd9778ef692488bad478c0efb8bad1481cb23bac2cac735029ae9ce8d734adc",
+  "tier1/fastapi-postgres/codex": "794a383d42f480ab6f7b4826be0ea3b1a79ff06e2a7aaa95f852297fab2cb66b",
+  "tier1/generic/claude-code": "d7dda56c0b31d6a88e961f5d5995af9bfd63f1636bf896fc0ace08d359b5ed75",
+  "tier1/generic/codex": "111029564909803477da1bc87ecc7d7bfb797db97fc0bf27e69f4577797f90bc",
+  "tier1/node/claude-code": "d008881d29c72e9fb1ef7163b79f0613b4441639b86561ff1434d51e163a11e7",
+  "tier1/node/codex": "1332f8957966225e4c0c36d02ffafc83cb638c80d431dc244713a9129c19cdb4",
+  "tier2/fastapi-postgres/claude-code": "8ed3a53ec14a885d1289ca65aa5b55829f6b441c00f3754a615bd1a418e1ebb6",
+  "tier2/fastapi-postgres/codex": "ef9203ef6f5754feccf03882b85511175cc6769c485e154431a2aebfe1ee3bfd",
+  "tier2/generic/claude-code": "c3494539a268dbbf07f5ea74fecedfd7b2c1cf44afa95c36727de96a1c94654d",
+  "tier2/generic/codex": "1bae3f2c3bad4661ba71935d0ea06dc413183a39827feae192b83add374a0c75",
+  "tier2/node/claude-code": "59a10f008d9034b83e8305164c9ee7476b8ce750933c5b7112b7de60bf15a790",
+  "tier2/node/codex": "7caaff3c7c3be3eca5e0b40ec1690c9475dac2d16bb9559788313ec4f85f73dc",
+  "tier3/fastapi-postgres/claude-code": "541a1fc46106fdeac98b17862a446c0de6c765b308023e6ed6ac224f4cbe433f",
+  "tier3/fastapi-postgres/codex": "502b811b2bf0f444fd56a1f53f7f556016d7b34f7b377198bf7e5b4b5d520a84",
+  "tier3/generic/claude-code": "8941bd44dcfd45613de4216cf8ef1a57e4becacbb92b1cb3da5f81db14a994cb",
+  "tier3/generic/codex": "16a8b76287b7f797b01b28c44f6e846c7d4d7382354d3302ada5a03b75a8023c",
+  "tier3/node/claude-code": "9ec3f3bd770cb96d90b876da86a5d2ff41c24f732b0e15c9db4cf75290b1f31f",
+  "tier3/node/codex": "c934db014cc1f2779f48b95bb0d5e19c4ba4bbbd2a352170a3d5d82108fbda0f"
 }
