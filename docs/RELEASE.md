@@ -2,6 +2,7 @@
 
 The maintainer does these steps. The agent must not make the repository public, create the signing key or push tags.
 
+0. `python scripts/release_check.py` runs every check below and lists what is left.
 1. `python -m pytest` and `python scripts/eval.py` pass (all gates).
 2. Version bumped in `.claude-plugin/plugin.json` and `scripts/governance.py` (`GOVERNOR_VERSION`); CHANGELOG entry
    dated.

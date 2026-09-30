@@ -1,7 +1,7 @@
 {
   "enforcement": {
     "metrics": {
-      "cases": 275,
+      "cases": 283,
       "fail_open": 0,
       "attack_stopped": 1.0,
       "attack_exact": 1.0,
@@ -16,8 +16,8 @@
       "P6-force-push": "9/9",
       "P6-mcp-allowlist": "2/2",
       "P6-prod-deploy": "16/16",
-      "P6-rm-rf": "35/35",
-      "P6-secret-read": "30/30",
+      "P6-rm-rf": "36/36",
+      "P6-secret-read": "33/33",
       "P7-obfuscated-exec": "3/3",
       "P8-paid-cli": "3/3",
       "P9-db-dump": "3/3",
@@ -143,9 +143,9 @@
     ]
   },
   "meta": {
-    "date": "2026-09-29T23:57:36+00:00",
+    "date": "2026-09-30T00:22:53+00:00",
     "governor_version": "0.2.0",
-    "commit": "7f2fd21"
+    "commit": "1e47479"
   },
   "gates": [
     {

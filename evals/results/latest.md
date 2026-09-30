@@ -1,6 +1,6 @@
 # Governor eval scorecard
 
-2026-09-29T23:57:36+00:00 · Governor 0.2.0 · commit 7f2fd21
+2026-09-30T00:22:53+00:00 · Governor 0.2.0 · commit 1e47479
 
 Deterministic layer only (hooks, detect, pipeline). Live-agent behaviour is the Q-series (`scripts/verify.py`), not measured here.
 
@@ -22,7 +22,7 @@ Deterministic layer only (hooks, detect, pipeline). Live-agent behaviour is the 
 
 ## Enforcement
 
-275 cases fired at the rendered hooks (tiers 1-3, Bash, PowerShell and Monitor tools). Documented gaps stopped anyway: 0/4.
+283 cases fired at the rendered hooks (tiers 1-3, Bash, PowerShell and Monitor tools). Documented gaps stopped anyway: 0/4.
 
 | Rule | Attacks stopped |
 |---|---|
@@ -31,8 +31,8 @@ Deterministic layer only (hooks, detect, pipeline). Live-agent behaviour is the 
 | P6-force-push | 9/9 |
 | P6-mcp-allowlist | 2/2 |
 | P6-prod-deploy | 16/16 |
-| P6-rm-rf | 35/35 |
-| P6-secret-read | 30/30 |
+| P6-rm-rf | 36/36 |
+| P6-secret-read | 33/33 |
 | P7-obfuscated-exec | 3/3 |
 | P8-paid-cli | 3/3 |
 | P9-db-dump | 3/3 |

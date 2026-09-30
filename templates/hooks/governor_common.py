@@ -293,11 +293,48 @@ def _normalise_one(seg, depth, tool="Bash"):
     return [" ".join(toks)] + out
 
 
+def manifests_clean(root, globs):
+    """P10a: True only if git reports no uncommitted change to any manifest/lock file. Outside git, on any git
+    error or timeout: False, so the dependency rule still asks (fail closed)."""
+    import subprocess
+    try:
+        r = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "--untracked-files=all", "--",
+                            *[f":(glob)**/{g}" for g in globs]], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode == 0 and not r.stdout.strip()
+
+
+def strip_comments(cmd):
+    """P7b: drop shell comments (# at the start of a word, outside quotes, to end of line), as the shell does."""
+    out, quote, i, cmd = [], None, 0, str(cmd)
+    while i < len(cmd):
+        c = cmd[i]
+        if quote:
+            if c == quote:
+                quote = None
+            elif c == "\\" and quote == '"' and i + 1 < len(cmd):
+                out.append(c)
+                i += 1
+                c = cmd[i]
+        elif c in "'\"":
+            quote = c
+        elif c == "#" and (i == 0 or cmd[i - 1] in " \t\n;|&(") and cmd[i + 1:i + 2] != ">":
+            nl = cmd.find("\n", i)
+            if nl < 0:
+                break
+            i = nl
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out).rstrip()
+
+
 def normalise(cmd, depth=0, tool="Bash"):
     """Normalise a shell command into simple segments (P7): wrappers, keywords, paths, `bash -c`,
     `pwsh -Command`, `eval`, `find -exec`, runners, containers and `git -C` are unwrapped; brace groups are
     expanded; text piped into a bare shell is treated as a script. The raw command is included too."""
-    cmd = str(cmd)
+    cmd = strip_comments(cmd) if depth == 0 else str(cmd)
     variants = expand_braces(cmd) if depth == 0 else [cmd]
     out = [" ".join(v.split()) for v in variants] if depth == 0 else []
     for v in variants:
@@ -457,7 +494,7 @@ def _is_read_only(toks):
 
 def guard_hit(cmd, tool="Bash"):
     """True if a shell command could modify Governor's guardrails or run its admin scripts (P9)."""
-    for variant in expand_braces(str(cmd)):
+    for variant in expand_braces(strip_comments(cmd)):
         cwd = ""
         for seg in _split_compound(variant):
             if tool == "PowerShell":

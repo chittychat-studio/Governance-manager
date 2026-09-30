@@ -27,6 +27,19 @@ rules:
         - '^(pipx|conda|mamba|gem|cargo)(\s+-\S+)*\s+(install|add)\b'
         - '^go(\s+-\S+)*\s+(install|get)\b'
         - '^(install-module|install-package)\b'
+      allow_if_clean: ['package.json', 'package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock',
+                       'bun.lockb', 'bun.lock', 'requirements*.txt', 'pyproject.toml', 'poetry.lock', 'uv.lock',
+                       'Pipfile', 'Pipfile.lock', 'pdm.lock', 'setup.py', 'setup.cfg']
+      bash_allow:
+        # P10a: restoring the dependencies the project already declares (no new package named),
+        # only while the manifests above have no uncommitted change (allow_if_clean)
+        - '^(npm|pnpm|bun)(\s+-\S+)*\s+(install|i|ci)(\s+-\S+)*\s*$'
+        - '^(npm|pnpm|bun)(\s+-\S+)*\s*$'
+        - '^yarn(\s+-\S+)*(\s+install)?(\s+-\S+)*\s*$'
+        - '^(python[\d.]*\s+(-\S+\s+)*-m\s+|py\s+(-\S+\s+)*-m\s+)?pip[\d.]*\s+install(\s+(-r|--requirement|-c|--constraint)\s+\S+|\s+(-e|--editable)\s+(\.{1,2}|\.{0,2}/\S*|[\w.-]+/\S*)|\s+--(upgrade|no-cache-dir|user|quiet|no-deps)|\s+-[qU])+\s*$'
+        - '^(poetry|pdm|pipenv|hatch)(\s+-\S+)*\s+install(\s+-\S+)*\s*$'
+        - '^uv(\s+-\S+)*\s+sync\b(\s+-\S+)*\s*$'
+        - '^uv(\s+-\S+)*\s+pip\s+install(\s+(-r|--requirement)\s+\S+)+\s*$'
   - id: P10-webfetch-ask
     spec: P10
     text: Web fetches need human approval.

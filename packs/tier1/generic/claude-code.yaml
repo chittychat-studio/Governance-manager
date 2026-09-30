@@ -58,7 +58,7 @@ rules:
         - '^docker-compose\b.*\sconfig\b'
       bash_allow:
         # onboarding steps that name .env without reading it
-        - '^cp\s+(\S*/)?\.env\.(example|sample|template)\s+(\S*/)?\.env(\.local)?\s*$'
+        - '^(cp|copy|copy-item)\s+(\S*[/\\])?\.env\.(example|sample|template)\s+(\S*[/\\])?\.env(\.local)?\s*$'
         - '^touch\s+(\S*/)?\.env(\.local)?\s*$'
         - '^(uvicorn|fastapi|gunicorn|hypercorn|docker|docker-compose|podman)\b.*--env-file[= ]'
         - '^docker(\s+-\S+)*\s+compose\b.*--env-file[= ]'

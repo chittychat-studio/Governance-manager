@@ -50,7 +50,14 @@ def decide(event, cfg):
             for rule in cfg.get(f"bash_{kind}", []):
                 pat = re.compile(rule["pattern"], re.I)
                 exempt = allow.get(rule["rule"], [])
-                if any(pat.search(s) and not any(a.search(s) for a in exempt) for s in segs):
+                hits = [s for s in segs if pat.search(s)]
+                if not hits:
+                    continue
+                globs = (cfg.get("allow_if_clean") or {}).get(rule["rule"])
+                if exempt and globs and any(a.search(s) for s in hits for a in exempt) and \
+                        not gc.manifests_clean(root, globs):
+                    exempt = []   # P10a: an edited manifest may have added a package, so restores ask too
+                if any(not any(a.search(s) for a in exempt) for s in hits):
                     return kind, rule["rule"], rule["text"]
     for p in gc.tool_paths(ti):
         for rule in cfg.get("path_deny", []):

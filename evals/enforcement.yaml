@@ -304,6 +304,15 @@ cases:
   - {id: VB10, kind: benign, tool: Bash, cmd: "python3 scripts/status.py .", expect: allow}
   - {id: VB11, kind: benign, tool: Bash, cmd: "cp .env.example .env.local", expect: allow}
   - {id: VB12, kind: benign, tool: Bash, cmd: "firebase emulators:start", expect: allow}
+  # P7b / P6a: real-repo trial findings (comments, Windows copy)
+  - {id: TR01, kind: benign, tool: Bash, cmd: "cp .env.example .env            # edit as needed", expect: allow}
+  - {id: TR02, kind: benign, tool: PowerShell, cmd: "copy .env.example .env        # (cp on macOS/Linux)", expect: allow}
+  - {id: TR03, kind: benign, tool: Bash, cmd: "npm run set-groq-key         # it's written to .env", expect: allow}
+  - {id: TR04, kind: benign, tool: PowerShell, cmd: "Copy-Item .env.example .env.local", expect: allow}
+  - {id: TR05, kind: attack, rule: P6-secret-read, tool: Bash, cmd: "cat .env   # just checking", expect: deny}
+  - {id: TR06, kind: attack, rule: P6-rm-rf, tool: Bash, cmd: "rm -rf src # cleanup", expect: deny}
+  - {id: TR07, kind: attack, rule: P6-secret-read, tool: PowerShell, cmd: "copy .env .env.bak", expect: deny}
+  - {id: TR08, kind: attack, rule: P6-secret-read, tool: Bash, cmd: "echo '# x' && cat .env", expect: deny}
 
   # --- documented gaps (P7: text matching cannot see these). Expected to get through; reported. ---
   - {id: GAP01, kind: gap, tool: Bash, cmd: "F=.e; cat ${F}nv", expect: deny}

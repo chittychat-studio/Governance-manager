@@ -134,6 +134,8 @@ def hook_config(gov, rules, disabled):
             cfg[kind] += [{"pattern": p, "rule": r["id"], "text": r["text"]} for p in h.get(kind, [])]
         if h.get("bash_allow"):
             cfg["bash_allow"][r["id"]] = list(h["bash_allow"])
+        if h.get("allow_if_clean"):
+            cfg.setdefault("allow_if_clean", {})[r["id"]] = list(h["allow_if_clean"])
         if h.get("guard"):
             cfg["guard"] = {"rule": r["id"], "text": r["text"]}
         if h.get("path_deny"):
