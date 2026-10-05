@@ -7,8 +7,9 @@ Claude Code gets rules it cannot talk its way past. It cannot:
 - force-push over your history;
 - switch its own safety off.
 
-It must ask you before deploying, installing packages or changing your database. It is told when it writes an API
-key into your code. It cannot say "done" while your tests fail.
+It must ask you before production deploys; projects with logins or personal data also get asks before database
+changes and, at the strictest tier, package installs. It is told when it writes an API key into your code. It cannot
+say "done" while your tests fail.
 
 Every rule is labelled **enforced** (a hook or permission rule actually stops it) or **advisory** (only told to the
 agent). Full rules: `SPEC.md`.
@@ -44,7 +45,7 @@ Governor picks a **tier** from your answers. You are never asked which guardrail
 
 | Tier | When | Adds |
 |---|---|---|
-| 1 | Nothing sensitive: no logins, no personal data | 11 base rules (below) |
+| 1 | No personal, payment or health data, and no public logins (an internal app with logins is tier 1) | 11 base rules (below) |
 | 2 | Logins on a public app, or personal data used internally | + database dumps and destructive migrations ask first; no personal data in logs (advisory) |
 | 3 | Personal data that is public or shared by many customers, or any payments or health data | + installing packages, web fetches and dumping the environment ask first; test data must be fake (advisory) |
 
@@ -169,9 +170,10 @@ Claude:  Governor asks before installing packages (P10-dependency-add). Approve?
 - **Exceptions are human-only and leave a record.** `/governor:except --rule P10-webfetch-ask --reason "docs site
   fetches are part of our build"` gives you the command to run in your own terminal. The reason, date and
   `git config user.email` go into `governance.yaml`, and the evidence report lists every exception.
-- **Changes that weaken protection need you.** Re-running init cannot lower the tier, change the test command or
-  allow new MCP servers unless you run it yourself in your own terminal with `--human`. The agent is blocked from
-  passing that flag.
+- **Changes that weaken protection need you.** Re-running init cannot lower the tier: that needs an exception you
+  record yourself (`/governor:except --tier N --reason "..."`). It cannot change the test command or allow new MCP
+  servers unless you run it yourself in your own terminal with `--human`. The agent is blocked from passing that
+  flag.
 - **Codex:** with `agent: codex`, the same rules are written to a marked block in `AGENTS.md`. They are advisory
   only, because Governor installs no hooks for Codex.
 - **Windows:** hooks cover Claude Code's PowerShell tool as well as Bash. A test command written with forward
@@ -223,17 +225,23 @@ It then creates six files in `docs/project/`:
 |---|---|---|
 | `rules.md` | dev rules, general principles, coding standards, project structure | every session (max 40 lines) |
 | `memory.md` | current status, completed, in progress, next | every session (max 40 lines) |
-| `design.md` | design principles, colour palette, typography, UI components | only when Claude edits UI files |
+| `design.md` | design principles, colour palette, typography, UI components | a one-line pointer to it loads when Claude works on UI files |
 | `PRD.md` | overview, problem, goals, target users, core features | only when a task needs it |
 | `architecture.md` | app flow, architecture, tech stack, folder structure | only when a task needs it |
 | `task.md` | setup, authentication (if you have logins), one section per feature | only when a task needs it |
 
-- **Filled from your answers, not written by AI.** Anything you answer "not sure" becomes a visible `TODO`, never
-  made-up text.
+- **Filled from your answers, not written by AI.** If you answer "not sure" about the product, problem, users,
+  features or milestone, you get a visible `TODO`, never made-up text. For look, colours and coding rules you get
+  neutral defaults, labelled as defaults to replace.
 - **The files are yours.** Governor creates each file once and never overwrites it, and removing Governor keeps
   them.
 - **Advisory only:** Claude is asked to keep `memory.md` current, by replacing it at the end of each task; nothing
   enforces that.
+- **Guarded, because they load every session:** `rules.md` and `memory.md` stay within 40 lines and 4,000
+  characters, may not contain `@` lines (Claude Code would import another file, such as `.env`, through them) or
+  text telling Claude to switch guardrails off. Claude's edits to them are checked as they happen, shell commands may
+  not write to them, and lint checks them again in CI. A repo that ships its own unsafe `rules.md` is refused, and
+  Governor never writes through a symbolic link.
 
 For example, answering "a notes app for students" with features "add a note, tag notes, share a note" gives a
 `task.md` with sections Project setup, Authentication, Add a note, Tag notes and Share a note.
