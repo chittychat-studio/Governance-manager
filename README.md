@@ -36,6 +36,7 @@ claude plugin install governor@chittychat-governor
 | Command | What it does |
 |---|---|
 | `/governor:init` | Looks at your project, asks what it can't see (in plain words; "not sure" is fine), installs the rules |
+| `/governor:docs` | Optional. A few plain questions, then lean project docs in `docs/project/`: PRD, architecture, rules, design, tasks, memory. Only `rules.md` and `memory.md` load every session (40 lines each at most); the rest are read when needed |
 | `/governor:status` | In plain words: what you are protected from, what needs your OK, what was blocked recently |
 | `/governor:except --rule ID --reason "..."` | Switch one rule off with a written reason (you run it, not the agent) |
 | `/governor:remove` | Shows what Governor would remove; you confirm it yourself with `--yes` |
