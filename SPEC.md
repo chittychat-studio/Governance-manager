@@ -81,6 +81,17 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 - **R6** Output includes a coverage table per agent: rules enforced vs advisory.
 - **R7** The rules file (and the AGENTS.md block) ends with a fixed `## Working agreement` section, the same for every repo and labelled advisory (nothing enforces it): (a) keep replies short and on the user's stated goal; read and run only what the task needs, to save the user's token budget; (b) ask one short question before guessing when the request is unclear, or before any step that a rule above blocks or asks about; never look for another route to a blocked action; (c) before saying done, check the work against the rules above and the Commands line and say which were checked; (d) one line of thanks. At most 6 lines; its text lives in `render.py` only, never from repo text (L1). Positive wording in (d) is a maintainer choice, not a claimed effect.
 
+## PD — Project docs (optional, `/governor:docs`)
+
+- **PD1** `/governor:docs` is optional and separate from init, so init keeps its short question bank (I5). It needs an installed Governor (`governance.yaml`). It writes six files to `docs/project/`: `PRD.md` (product overview, problem statement, goals, target users, core features), `architecture.md` (app flow, high-level architecture, technology stack, folder structure), `rules.md` (dev rules, general principles, technology and coding standards, project structure), `design.md` (design principles, colour palette, typography, UI components), `task.md` (project setup, then one section per feature; authentication only when `auth` is in `data_classes`), `memory.md` (current status, completed, in progress, next, notes).
+- **PD2** Questions come from a fixed bank in `scripts/docs.py` (I5a): product, problem, users, features (1–8), look (closed choice), colours (hex values or "not sure"), milestone, conventions (optional). Free-text answers are single-line and capped at 300 characters (features at 80 each); line breaks and leading `#` are removed. "not sure" or a blank answer leaves a visible `TODO:` in the file, never invented text (evidence only). Stack, app type, data classes and test command come from `governance.yaml`, not new questions.
+- **PD3** Template only: files are filled deterministically from the answers and `governance.yaml`. No model writes their content (NX4, E2). The folder list in `architecture.md` comes from the repo's top two directory levels, skipping dependency and build folders, names quoted and capped at 30 entries (L1a).
+- **PD4** Create once, then the files are the user's. An existing file is never overwritten; docs.py reports it as kept. Re-running fills only missing files. `/governor:remove` keeps them.
+- **PD5** Token budget. Only `rules.md` and `memory.md` load every session (imported from Governor's CLAUDE.md block), each capped at 40 lines. `design.md` loads only when Claude works on UI files, through a scoped `.claude/rules/governor-design.md` with `paths:` frontmatter. `PRD.md`, `architecture.md` and `task.md` are listed in a short index in the block and read only when a task needs them. Codex gets the same index as plain text (no imports).
+- **PD6** Lint V11 fails when `docs/project/rules.md` or `docs/project/memory.md` is over 40 lines, and V3 counts both toward the always-loaded cap (R3). A recorded doc that is missing is a V11 warning, not a failure (the user may delete their own files).
+- **PD7** Advisory, labelled as such in the index: update `memory.md` at the end of each task by replacing it, not appending; tick `task.md` items when done. Nothing enforces these.
+- **PD8** `governance.yaml` records `docs: {dir, files, created}`; init re-runs keep it, so the index survives (R1).
+
 ## L — LLM safety
 
 - **L1** Compose and red-team subagents receive only structured intake, pack IDs and the template. Never raw repo text (README, comments, existing CLAUDE.md).
@@ -102,6 +113,7 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 - **V9** `governance.yaml` is self-consistent: the computed tier matches its intake, every exception has a reason of 20+ characters, a date and a user, and the effective tier and pack ids follow from them.
 - **V8** Every Governor-generated file (and Governor's hook entries in `settings.json`) equals a fresh render of `governance.yaml` (catches hand- or agent-edited hooks, config and rules).
 - **V10** Warning (not a failure): text outside Governor's blocks in `CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md` or `.claude/skills/**/SKILL.md` that tells the agent to switch guardrails off (disable hooks, bypass permissions, ignore Governor, ignore previous instructions). Such text loads every session and can override a user who does not know it is there. The phrase list lives in `lint.py` and is extended only by editing this rule.
+- **V11** Project docs (PD6): `docs/project/rules.md` or `memory.md` over 40 lines fails; a recorded doc that is missing warns.
 - **V7** Any failure → non-zero exit. No output ships with a lint failure.
 
 ## X — Exceptions

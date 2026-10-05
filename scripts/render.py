@@ -168,9 +168,38 @@ def hook_config(gov, rules, disabled):
 
 
 def claude_md_body(gov):
-    """Governor's block in CLAUDE.md: a pointer to the rules file and the test command (R3)."""
+    """Governor's block in CLAUDE.md: a pointer to the rules file and the test command (R3), plus the project-docs
+    index when /governor:docs has run (PD5)."""
     return (f"# Project instructions (Governor)\n\n- Governance rules load from `{RULES_MD}`.\n"
-            f"- {_tests_line(gov)}\n")
+            f"- {_tests_line(gov)}\n") + docs_index(gov, imports=True)
+
+
+DESIGN_RULE = ".claude/rules/governor-design.md"
+UI_GLOBS = ["**/*.tsx", "**/*.jsx", "**/*.vue", "**/*.svelte", "**/*.css", "**/*.scss", "**/*.html",
+            "**/components/**", "**/templates/**"]
+
+
+def docs_index(gov, imports):
+    """PD5: short index. imports=True (Claude Code) pulls rules.md and memory.md in with @; Codex gets plain text."""
+    docs = gov.get("docs")
+    if not docs:
+        return ""
+    d = docs["dir"]
+    load = (f"@{d}/rules.md\n@{d}/memory.md\n" if imports else
+            f"- Read `{d}/rules.md` and `{d}/memory.md` at the start of work.\n")
+    return (f"\n## Project docs (`{d}/`; read the others only when the task needs them)\n" + load +
+            f"- Product, users, features: `{d}/PRD.md`. How it fits together: `{d}/architecture.md`.\n"
+            f"- Tasks: `{d}/task.md` (tick items when done). UI look: `{d}/design.md`.\n"
+            f"- At the end of each task, replace `{d}/memory.md` with the current status; keep it under 40 "
+            "lines (advisory, PD7).\n")
+
+
+def design_rule_text(gov):
+    """PD5: loads only when Claude works on UI files (paths frontmatter)."""
+    d = gov["docs"]["dir"]
+    globs = "\n".join(f'  - "{g}"' for g in UI_GLOBS)
+    return (f"---\npaths:\n{globs}\n---\n{MD_HEADER}\n# UI work\n"
+            f"- Follow `{d}/design.md` (principles, colours, typography, components) for this change.\n")
 
 
 def _tests_line(gov):
@@ -377,6 +406,7 @@ def _render_codex(repo, gov, rules, disabled):
     body = rules_markdown(gov, rules, disabled, header=None, title="Governor rules for Codex")
     body += ("\nThese are instructions. Governor installs no hooks or permission rules for Codex, "
              "so none of them is enforced for Codex.\n")
+    body += docs_index(gov, imports=False)
     return write_block(repo / AGENTS_MD, body)
 
 
@@ -408,6 +438,11 @@ def _render_claude(repo, gov, rules, disabled, managed_old, managed, settings):
     rules_path.parent.mkdir(parents=True, exist_ok=True)
     rules_path.write_text(rules_markdown(gov, rules, disabled), encoding="utf-8")
     written.append(rules_path)
+
+    if gov.get("docs"):
+        dr = repo / DESIGN_RULE
+        dr.write_text(design_rule_text(gov), encoding="utf-8")
+        written.append(dr)
 
     claude_md = repo / "CLAUDE.md"
     existing = read_user_text(claude_md) if claude_md.exists() else None

@@ -4,6 +4,13 @@ Status words follow SPEC Q5: generated / linted / verified. Nothing below is "ve
 
 ## 0.2.0 (unreleased)
 
+- **Project docs, optional (PD1-PD8, V11).** `/governor:docs` asks 8 plain questions and creates `docs/project/`
+  PRD, architecture, rules, design, task and memory files from the answers (template only, no model writes them).
+  Created once, then the user's; never overwritten, kept on remove. Lean loading: only `rules.md` and `memory.md` are
+  imported every session and lint fails either above 40 lines; `design.md` loads only for UI files; the rest are
+  read on demand.
+- **Windows test command paths (I1f).** See PR #16.
+
 For vibe coders: any project, no extra installs, plain words.
 
 - **Every project gets rules (P1a, P11).** Stack-neutral `generic` packs hold all base rules. The `node` family

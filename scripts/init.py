@@ -130,6 +130,8 @@ def install(repo, answers, mcp_allow=None, with_ci=False, host=None, human=False
         gov = governance.build(intake, exceptions,
                                mcp_allow if mcp_allow is not None else old.get("mcp_allow", []),
                                old.get("hook_python"), corrections, assumed)
+        if old.get("docs"):
+            gov["docs"] = old["docs"]   # PD8: project docs record survives a re-run
     except (IntakeError, PackError) as exc:
         return 4, [str(exc)]
     problem = render.test_cmd_problem(gov)   # before I1d, so a --human re-run is never sent to a dead end (I1b)

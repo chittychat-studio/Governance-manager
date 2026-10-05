@@ -18,6 +18,7 @@ from packs import PackError  # noqa: E402
 from pyfind import works  # noqa: E402
 
 LINE_CAP = 150
+DOCS_CAP = 40   # PD6
 # V4: extended only by editing SPEC V4.
 FORBIDDEN = ["as needed", "where appropriate", "best practices", "ensure security"]
 # V10: text telling the agent to switch guardrails off. Extended only by editing SPEC V10.
@@ -43,7 +44,7 @@ def _unscoped_rules(repo):
 
 
 def lint(repo):
-    """Return (failures, warnings) lists of 'Vn: message' strings (V1-V10)."""
+    """Return (failures, warnings) lists of 'Vn: message' strings (V1-V11)."""
     repo = Path(repo).resolve()
     fails, warns = [], []
     gov = governance.read(repo)
@@ -287,6 +288,17 @@ def _lint_claude(repo, gov, managed, fails, warns):
         user = user_rules + max(0, cm_lines - len(block.splitlines()))
     else:
         user = cm_lines + user_rules
+    docs = gov.get("docs") or {}
+    for name in docs.get("files", []):   # V11 (PD6): always-loaded docs are capped and counted in V3
+        p = repo / docs["dir"] / name
+        if not p.exists():
+            warns.append(f"V11: {docs['dir']}/{name} is recorded but missing (re-run /governor:docs to recreate it)")
+        elif name in ("rules.md", "memory.md"):
+            n = len(p.read_text(encoding="utf-8", errors="replace").splitlines())
+            user += n
+            if n > DOCS_CAP:
+                fails.append(f"V11: {docs['dir']}/{name} is {n} lines > {DOCS_CAP}; it loads every session, so "
+                             "shorten it (move detail to PRD.md, architecture.md or task.md)")
     if owned > LINE_CAP:
         fails.append(f"V3: Governor-generated always-loaded text is {owned} lines > {LINE_CAP}")
     elif owned + user > LINE_CAP:
