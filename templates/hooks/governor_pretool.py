@@ -18,6 +18,45 @@ NO_WORKAROUND = ("Do not look for another way to do this; tell the user what was
                  "(Governor rule, SPEC L5).")
 
 
+DOCS_WRITE = re.compile(r"(>|\btee\b|\bsed\b|\bcp\b|\bmv\b|\bln\b|\brm\b|\bdd\b|\btruncate\b|\brsync\b|"
+                        r"\binstall\b|set-content|add-content|out-file|copy-item|move-item|new-item|remove-item|"
+                        r"rename-item|\bpython\d*\b|\bpy\b|\bnode\b|\bperl\b|\bruby\b|\bpwsh\b|\bpowershell\b|"
+                        r"\bbash\b|\bsh\b|\bzsh\b)", re.I)
+
+
+def docs_shell_write(cmd, dg, segs=None):
+    """PD6: a command segment that names an always-loaded doc (or the docs folder itself) and could write to it.
+    The whole command is checked too when the splitter could not separate it (quotes, $'..', backticks)."""
+    d = dg["dir"].lower().rstrip("/")
+    parts = [x for x in (segs or []) if x.strip() != cmd.strip()] or list(segs or []) or [cmd]
+    for seg in parts:
+        norm = seg.replace("\\", "/").lower()
+        named = any(f.lower() in norm for f in dg["files"]) or re.search(re.escape(d) + r"/?(?![\w./-])", norm)
+        if named and DOCS_WRITE.search(seg):
+            return True
+    return False
+
+
+def docs_after_write(tool, ti, path, root):
+    """PD6: the file text this Edit/Write/MultiEdit would leave (new text alone when the edit cannot apply)."""
+    if tool == "Write":
+        return str(ti.get("content", ""))
+    p = Path(path) if Path(path).is_absolute() else Path(root) / path
+    try:
+        text = p.read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    edits = ti.get("edits") if tool == "MultiEdit" else [ti]
+    added = []
+    for e in edits if isinstance(edits, list) else []:
+        if not isinstance(e, dict):
+            continue
+        old, new = str(e.get("old_string", "")), str(e.get("new_string", ""))
+        added.append(new)
+        text = text.replace(old, new) if e.get("replace_all") else (text.replace(old, new, 1) if old in text else text)
+    return text + ("\n" + "\n".join(added) if added and not all(a in text for a in added) else "")
+
+
 def decide(event, cfg):
     """Return (decision, rule_id, message) or (None, None, None)."""
     if not isinstance(event, dict):
@@ -45,6 +84,11 @@ def decide(event, cfg):
         guard = cfg.get("guard")
         if guard and gc.guard_hit(cmd, tool):
             return "deny", guard["rule"], guard["text"]
+        dg = cfg.get("docs_guard")
+        if dg and docs_shell_write(cmd, dg, segs):
+            return "deny", dg["rule"], (f"Shell commands may not write, move or link {' or '.join(dg['files'])} or "
+                                        f"{dg['dir']}/; use the Edit or Write tool, which checks what goes into "
+                                        "files loaded every session (PD6)")
         limit = cfg.get("repeat_fail")
         if limit:
             fails = gc.read_state(event, "fails", {})
@@ -64,6 +108,14 @@ def decide(event, cfg):
                     exempt = []   # P10a: manifests changed this session, or a cd moved the restore elsewhere: ask
                 if any(not any(a.search(s) for a in exempt) for s in hits):
                     return kind, rule["rule"], rule["text"]
+    dg = cfg.get("docs_guard")
+    if dg and tool in WRITE_TOOLS:
+        for p in gc.tool_paths(ti):
+            if gc.path_matches(p, dg["files"], root):
+                probs = gc.docs_text_problems(docs_after_write(tool, ti, p, root), dg["patterns"])
+                if probs:
+                    return "deny", dg["rule"], (f"{p} loads into every session, so this change is refused: "
+                                                f"{'; '.join(probs)} (PD6)")
     for p in gc.tool_paths(ti):
         for rule in cfg.get("path_deny", []):
             if gc.path_matches(p, rule["globs"], root) and not gc.path_matches(p, rule.get("allow", []), root):

@@ -79,23 +79,19 @@ def mcp_servers(repo):
 
 def test_cmd_warnings(repo, test_cmd):
     """I1c: warn when the test command cannot run here, so the Stop hook would block 'done' for no real reason."""
-    import shlex
-    import shutil
     if str(test_cmd).strip().lower() == "none":
         return []
-    try:
-        prog = shlex.split(str(test_cmd))[0]
-    except (ValueError, IndexError):
+    sys.path.insert(0, str(render.TEMPLATES))
+    import governor_common as gcm   # I1f: the same program check the Stop hook uses
+    a, b = gcm.program_word(test_cmd)
+    prog = str(test_cmd)[a:b].strip('"')
+    if not prog:
         return []
     out = []
-    if any(sep in prog for sep in "/\\"):   # a path: resolve against the repo, as the Stop hook runs it there (I1f)
-        cand = Path(repo) / prog.replace("\\", "/")
-        found = cand.exists() or Path(prog).is_absolute() and Path(prog).exists()
-    else:
-        found = shutil.which(prog) is not None
-    if not found:
+    if not gcm.program_found(repo, test_cmd):
         out.append(f"the test command's program '{prog}' was not found on this computer; the Stop hook will refuse "
-                   "'done' until it runs. If there are no tests yet, re-run init and answer 'none'.")
+                   "'done' until it runs. Use a command that works here (from your own terminal with --human if "
+                   "Governor is already installed), or 'none' if there are no tests yet.")
     if prog in ("npm", "pnpm", "yarn", "bun") and "test" in str(test_cmd).split()[1:3]:
         try:
             scripts = json.loads((Path(repo) / "package.json").read_text(encoding="utf-8-sig")).get("scripts", {}) or {}

@@ -448,7 +448,8 @@ def test_test_cmd_that_cannot_start_says_so(installed):
     from test_hooks import set_test_cmd, stop
     set_test_cmd(installed, "backend/.venv/bin/no-such-python -m pytest")
     reason = json.loads(stop(installed).stdout)["reason"]
-    assert "could not start" in reason and "re-run Governor's init" in reason
+    assert "could not start" in reason and "re-running Governor's init" in reason and "--human" in reason
+    assert "answer 'none'" not in reason   # none is refused for a detected test command (I1f)
     set_test_cmd(installed, "exit 1")
     assert "is failing" in json.loads(stop(installed).stdout)["reason"]
 
@@ -457,3 +458,38 @@ def test_test_cmd_warning_resolves_paths_against_the_repo(tmp_path):
     r = repo_with(tmp_path, {"backend/.venv/bin/python": "", "package.json": "{}"})
     assert init.test_cmd_warnings(r, "backend/.venv/bin/python -m pytest") == []
     assert any("not found" in w for w in init.test_cmd_warnings(r, "backend/.venv/bin/nope -m pytest"))
+
+
+# --- Critical review round (2026-10-05): I1f precision, PD4/PD6 hardening, I1b side effect ---
+
+def test_exit_127_from_inside_the_tests_is_failing_not_could_not_start(installed):
+    """M1: the program started; a tool it calls was missing. That is a failure, not a setup problem."""
+    from test_hooks import set_test_cmd, stop
+    (installed / "run_tests.sh").write_text("echo running 3 tests\nno-such-tool-xyz\n")
+    set_test_cmd(installed, "sh run_tests.sh")
+    reason = json.loads(stop(installed).stdout)["reason"]
+    assert "is failing (exit 127" in reason and "could not start" not in reason
+
+
+@pytest.mark.parametrize("cmd,nt,found", [
+    (r"backend\.venv\Scripts\python.exe -m pytest", True, True),
+    ("backend/.venv/Scripts/python -m pytest", True, True),     # cmd.exe adds .exe (PATHEXT)
+    ("backend/.venv/Scripts/nope -m pytest", True, False),
+    ("backend/.venv/Scripts/python.exe -m pytest", False, True),
+])
+def test_program_found_matches_how_the_shell_finds_it(tmp_path, cmd, nt, found):
+    """M2: init's warning and the Stop hook share one program check; no shlex mangling of backslashes."""
+    sys.path.insert(0, str(ROOT / "templates" / "hooks"))
+    import governor_common as gcm
+    (tmp_path / "backend/.venv/Scripts").mkdir(parents=True)
+    (tmp_path / "backend/.venv/Scripts/python.exe").write_text("")
+    assert gcm.program_found(tmp_path, cmd, nt=nt) is found
+
+
+def test_test_cmd_check_writes_no_state_into_the_current_folder(tmp_path, monkeypatch):
+    """I1b: the in-process test_cmd check must not create .claude/ wherever it is run from."""
+    import conftest
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "work").mkdir()
+    conftest.install(tmp_path / "repo")
+    assert not (tmp_path / ".claude").exists()

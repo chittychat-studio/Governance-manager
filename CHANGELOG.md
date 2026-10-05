@@ -10,6 +10,11 @@ Status words follow SPEC Q5: generated / linted / verified. Nothing below is "ve
   imported every session and lint fails either above 40 lines; `design.md` loads only for UI files; the rest are
   read on demand.
 - **Windows test command paths (I1f).** See PR #16.
+- **Review round fixes (PD4, PD6, V11, I1f, I1b).** Always-loaded project docs are checked on every Edit/Write
+  (no `@` import lines, no guardrail-off text, 40 lines / 4,000 characters) and shell writes to them are blocked;
+  a repo-shipped unsafe `rules.md` is refused before import; docs.py refuses symbolic links and never writes outside
+  the repo. "Could not start" now means the test program was not found; exit 127 from inside the tests is reported
+  as failing. init's test-command check no longer writes state into the current folder.
 
 For vibe coders: any project, no extra installs, plain words.
 

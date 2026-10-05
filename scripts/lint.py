@@ -14,11 +14,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import governance  # noqa: E402
 import render  # noqa: E402
+
+sys.path.insert(0, str(render.TEMPLATES))
+import governor_common as gcm  # noqa: E402  (PD6 shared docs check)
 from packs import PackError  # noqa: E402
 from pyfind import works  # noqa: E402
 
 LINE_CAP = 150
-DOCS_CAP = 40   # PD6
 # V4: extended only by editing SPEC V4.
 FORBIDDEN = ["as needed", "where appropriate", "best practices", "ensure security"]
 # V10: text telling the agent to switch guardrails off. Extended only by editing SPEC V10.
@@ -289,16 +291,15 @@ def _lint_claude(repo, gov, managed, fails, warns):
     else:
         user = cm_lines + user_rules
     docs = gov.get("docs") or {}
-    for name in docs.get("files", []):   # V11 (PD6): always-loaded docs are capped and counted in V3
+    for name in docs.get("files", []):   # V11 (PD6): always-loaded docs are capped, checked and counted in V3
         p = repo / docs["dir"] / name
         if not p.exists():
             warns.append(f"V11: {docs['dir']}/{name} is recorded but missing (re-run /governor:docs to recreate it)")
         elif name in ("rules.md", "memory.md"):
-            n = len(p.read_text(encoding="utf-8", errors="replace").splitlines())
-            user += n
-            if n > DOCS_CAP:
-                fails.append(f"V11: {docs['dir']}/{name} is {n} lines > {DOCS_CAP}; it loads every session, so "
-                             "shorten it (move detail to PRD.md, architecture.md or task.md)")
+            text = p.read_text(encoding="utf-8", errors="replace")
+            user += len(text.splitlines())
+            for prob in gcm.docs_text_problems(text, GUARDRAIL_OFF):
+                fails.append(f"V11: {docs['dir']}/{name} loads every session, but {prob}")
     if owned > LINE_CAP:
         fails.append(f"V3: Governor-generated always-loaded text is {owned} lines > {LINE_CAP}")
     elif owned + user > LINE_CAP:

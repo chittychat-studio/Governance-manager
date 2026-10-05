@@ -96,13 +96,15 @@ def main():
         st["blocks"] += 1
         gc.write_state(event, "stop", {"blocks": st["blocks"], "green": st.get("green")})
         tail = "\n".join(out.strip().splitlines()[-20:])
-        if code in gc.CANNOT_START:
-            reason = (f"Governor rule {rule}: the test command `{cfg['test_cmd']}` could not start here "
-                      f"(exit {code}), so Governor cannot check the tests. This is a setup problem, not a "
-                      "test failure: in your own terminal, re-run Governor's init with a test command that works on "
-                      "this computer, or answer 'none' if there are no tests yet (I1f).")
+        if not gc.program_found(root, cfg["test_cmd"]):
+            reason = (f"Governor rule {rule}: the test command `{cfg['test_cmd']}` could not start here: its program "
+                      "was not found, so Governor cannot check the tests. This is a setup problem, not a test "
+                      "failure. The user can fix it by re-running Governor's init in their own terminal with a test "
+                      f"command that works on this computer and --human (I1f, I1d).{gc.explain(cfg, rule)}")
         else:
-            reason = (f"Governor rule {rule}: `{cfg['test_cmd']}` is failing. Fix the tests before "
+            why = (f" (exit {code}: a program the tests call was not found or could not run)"
+                   if code in (126, 127, 9009) else "")
+            reason = (f"Governor rule {rule}: `{cfg['test_cmd']}` is failing{why}. Fix the tests before "
                       f"finishing.{gc.explain(cfg, rule)}")
         print(json.dumps({"decision": "block", "reason": f"{reason}\n{tail}"}))
         gc.log(event, f"stop_tests block rule={rule}")

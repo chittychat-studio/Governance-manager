@@ -86,6 +86,7 @@ def test_cmd_problem(gov):
     rules, disabled = split_rules(gov, "claude-code")
     cfg = hook_config(gov, rules, disabled)
     cfg.pop("repeat_fail", None)
+    cfg.pop("allow_if_clean", None)   # I1b: no session baseline, so nothing is written to disk
     event = {"tool_name": "Bash", "tool_input": {"command": cmd}, "session_id": "governor-test-cmd-check"}
     decision, rule, _ = mod.decide(event, cfg)
     if decision in ("deny", "ask"):
@@ -164,6 +165,11 @@ def hook_config(gov, rules, disabled):
             cfg["stop_tests_rule"] = r["id"]
         if h.get("repeat_fail"):
             cfg["repeat_fail"] = {"n": h["repeat_fail"], "rule": r["id"]}
+    if gov.get("docs") and cfg.get("guard"):   # PD6: always-loaded docs are checked on every write
+        import lint
+        d = gov["docs"]["dir"]
+        cfg["docs_guard"] = {"rule": cfg["guard"]["rule"], "dir": d, "files": [f"{d}/rules.md", f"{d}/memory.md"],
+                             "patterns": list(lint.GUARDRAIL_OFF)}
     return cfg
 
 
@@ -289,6 +295,11 @@ def preflight(repo, gov):
     if bad_py:
         raise RenderError(f"refused: {bad_py}. Edit governance.yaml or re-run init in your own terminal.")
     settings = load_settings(repo) if "claude-code" in gov["packs"] else None
+    dr = repo / DESIGN_RULE
+    if gov.get("docs") and (dr.is_symlink() or (dr.exists() and MD_HEADER not in
+                                                  dr.read_text(encoding="utf-8", errors="replace"))):
+        raise RenderError(f"refused: {DESIGN_RULE} exists and was not written by Governor; rename it so Governor "
+                          "can write its UI pointer there (PD5)")
     for name, needed in (("CLAUDE.md", "claude-code" in gov["packs"]), (AGENTS_MD, "codex" in gov["packs"])):
         p = repo / name
         if needed and p.exists():
@@ -439,10 +450,12 @@ def _render_claude(repo, gov, rules, disabled, managed_old, managed, settings):
     rules_path.write_text(rules_markdown(gov, rules, disabled), encoding="utf-8")
     written.append(rules_path)
 
+    dr = repo / DESIGN_RULE
     if gov.get("docs"):
-        dr = repo / DESIGN_RULE
         dr.write_text(design_rule_text(gov), encoding="utf-8")
         written.append(dr)
+    elif dr.exists() and MD_HEADER in dr.read_text(encoding="utf-8", errors="replace"):
+        dr.unlink()   # PD5: no docs recorded any more, so Governor's pointer goes
 
     claude_md = repo / "CLAUDE.md"
     existing = read_user_text(claude_md) if claude_md.exists() else None
