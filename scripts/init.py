@@ -88,7 +88,12 @@ def test_cmd_warnings(repo, test_cmd):
     except (ValueError, IndexError):
         return []
     out = []
-    if shutil.which(prog) is None:
+    if any(sep in prog for sep in "/\\"):   # a path: resolve against the repo, as the Stop hook runs it there (I1f)
+        cand = Path(repo) / prog.replace("\\", "/")
+        found = cand.exists() or Path(prog).is_absolute() and Path(prog).exists()
+    else:
+        found = shutil.which(prog) is not None
+    if not found:
         out.append(f"the test command's program '{prog}' was not found on this computer; the Stop hook will refuse "
                    "'done' until it runs. If there are no tests yet, re-run init and answer 'none'.")
     if prog in ("npm", "pnpm", "yarn", "bun") and "test" in str(test_cmd).split()[1:3]:

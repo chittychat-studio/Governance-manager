@@ -584,3 +584,27 @@ def guard_hit(cmd, tool="Bash"):
             if cwd and any((cwd.lower() + "/").startswith(d) for d in GUARD_DIRS):
                 return True   # any writing command run from inside .claude/hooks or Governor state
     return False
+
+
+CANNOT_START = {126, 127, 9009}   # I1f: shell could not run the program (9009 = cmd.exe "not recognized")
+
+
+def platform_cmd(cmd, nt=None):
+    """I1f: on Windows, turn / into \\ in the program path (first word) so cmd.exe does not read
+    `backend/.venv/Scripts/python.exe` as a command called `backend`. Arguments are left as written."""
+    nt = (os.name == "nt") if nt is None else nt
+    s = str(cmd)
+    if not nt:
+        return s
+    lead = len(s) - len(s.lstrip())
+    body = s[lead:]
+    if body.startswith('"'):
+        end = body.find('"', 1)
+        end = len(body) if end < 0 else end + 1
+    else:
+        m = re.match(r"\S+", body)
+        end = m.end() if m else 0
+    prog = body[:end]
+    if "://" in prog:
+        return s
+    return s[:lead] + prog.replace("/", "\\") + body[end:]

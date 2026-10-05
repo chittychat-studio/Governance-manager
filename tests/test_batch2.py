@@ -426,3 +426,34 @@ def test_test_cmd_warnings(tmp_path):
     assert any("no real" in w for w in init.test_cmd_warnings(r, "npm test"))
     assert any("not found" in w for w in init.test_cmd_warnings(r, "no-such-runner-xyz run"))
     assert init.test_cmd_warnings(r, "none") == []
+
+
+# --- Live LeaveTrip trial (2026-10-05): Windows test_cmd with forward slashes could not start (I1f) ---
+
+@pytest.mark.parametrize("cmd,want", [
+    ("backend/.venv/Scripts/python.exe -m pytest tests/unit", r"backend\.venv\Scripts\python.exe -m pytest tests/unit"),
+    ('"backend/my venv/Scripts/python.exe" -m pytest', r'"backend\my venv\Scripts\python.exe" -m pytest'),
+    ("npm test", "npm test"),
+    (r"backend\.venv\Scripts\python.exe -m pytest", r"backend\.venv\Scripts\python.exe -m pytest"),
+])
+def test_windows_test_cmd_program_path_uses_backslashes(cmd, want):
+    sys.path.insert(0, str(ROOT / "templates" / "hooks"))
+    import governor_common as gcm
+    assert gcm.platform_cmd(cmd, nt=True) == want
+    assert gcm.platform_cmd(cmd, nt=False) == cmd   # unchanged elsewhere, and governance.yaml keeps it as written
+
+
+def test_test_cmd_that_cannot_start_says_so(installed):
+    """A missing program is a setup problem, not failing tests: the block message says so (I1f)."""
+    from test_hooks import set_test_cmd, stop
+    set_test_cmd(installed, "backend/.venv/bin/no-such-python -m pytest")
+    reason = json.loads(stop(installed).stdout)["reason"]
+    assert "could not start" in reason and "re-run Governor's init" in reason
+    set_test_cmd(installed, "exit 1")
+    assert "is failing" in json.loads(stop(installed).stdout)["reason"]
+
+
+def test_test_cmd_warning_resolves_paths_against_the_repo(tmp_path):
+    r = repo_with(tmp_path, {"backend/.venv/bin/python": "", "package.json": "{}"})
+    assert init.test_cmd_warnings(r, "backend/.venv/bin/python -m pytest") == []
+    assert any("not found" in w for w in init.test_cmd_warnings(r, "backend/.venv/bin/nope -m pytest"))
