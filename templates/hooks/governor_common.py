@@ -586,7 +586,18 @@ def guard_hit(cmd, tool="Bash"):
     return False
 
 
-CANNOT_START = {126, 127, 9009}   # I1f: shell could not run the program (9009 = cmd.exe "not recognized")
+def program_word(cmd):
+    """I1f: (start, end) of the program (first word) in cmd: quotes respected, no shell parsing."""
+    s = str(cmd)
+    lead = len(s) - len(s.lstrip())
+    body = s[lead:]
+    if body.startswith('"'):
+        end = body.find('"', 1)
+        end = len(body) if end < 0 else end + 1
+    else:
+        m = re.match(r"\S+", body)
+        end = m.end() if m else 0
+    return lead, lead + end
 
 
 def platform_cmd(cmd, nt=None):
@@ -596,15 +607,48 @@ def platform_cmd(cmd, nt=None):
     s = str(cmd)
     if not nt:
         return s
-    lead = len(s) - len(s.lstrip())
-    body = s[lead:]
-    if body.startswith('"'):
-        end = body.find('"', 1)
-        end = len(body) if end < 0 else end + 1
-    else:
-        m = re.match(r"\S+", body)
-        end = m.end() if m else 0
-    prog = body[:end]
+    a, b = program_word(s)
+    prog = s[a:b]
     if "://" in prog:
         return s
-    return s[:lead] + prog.replace("/", "\\") + body[end:]
+    return s[:a] + prog.replace("/", "\\") + s[b:]
+
+
+def program_found(root, cmd, nt=None):
+    """I1f: can the test command's program be found? A path resolves against root; a bare name on PATH.
+    On Windows each PATHEXT extension is tried, as cmd.exe does. Unknown shapes count as found (fail to
+    'failing', never to 'could not start')."""
+    import shutil
+    nt = (os.name == "nt") if nt is None else nt
+    a, b = program_word(cmd)
+    prog = str(cmd)[a:b].strip('"')
+    if not prog or prog.lower() in ("exit", "cd", "set", "export", "call", "env") or "=" in prog:
+        return True
+    exts = [""] + ([e.lower() for e in os.environ.get("PATHEXT", ".COM;.EXE;.BAT;.CMD").split(";") if e] if nt else [])
+    if "/" in prog or "\\" in prog:
+        base = Path(prog.replace("\\", "/"))
+        cand = base if base.is_absolute() else Path(root) / base
+        return any(Path(str(cand) + e).exists() for e in exts)
+    return shutil.which(prog) is not None or (nt and any(shutil.which(prog + e) for e in exts if e))
+
+
+DOCS_MAX_LINES, DOCS_MAX_CHARS = 40, 4000   # PD6
+
+
+def docs_text_problems(text, guard_patterns=()):
+    """PD6: problems with an always-loaded project doc (imported into every session)."""
+    out = []
+    lines = str(text).splitlines()
+    if len(lines) > DOCS_MAX_LINES:
+        out.append(f"{len(lines)} lines > {DOCS_MAX_LINES}")
+    if len(str(text)) > DOCS_MAX_CHARS:
+        out.append(f"{len(str(text))} characters > {DOCS_MAX_CHARS}")
+    at = [i + 1 for i, l in enumerate(lines) if l.lstrip().startswith("@")]
+    if at:
+        out.append(f"line {at[0]} starts with @, which Claude Code would import as another file")
+    low = str(text).lower()
+    for pat in guard_patterns:
+        if re.search(pat, low):
+            out.append("it tells the agent to switch guardrails off")
+            break
+    return out

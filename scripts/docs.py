@@ -15,6 +15,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import detect  # noqa: E402
 import governance  # noqa: E402
+import lint  # noqa: E402
+import render as _render  # noqa: E402
+
+sys.path.insert(0, str(_render.TEMPLATES))
+import governor_common as gcm  # noqa: E402  (PD6: one content check for docs.py, the hook and lint)
 
 DOCS_DIR = "docs/project"
 FILES = ["PRD.md", "architecture.md", "rules.md", "design.md", "task.md", "memory.md"]
@@ -100,11 +105,11 @@ def _or_todo(s):
 def folder_tree(repo, limit=30):
     """Top two directory levels, dependency/build folders skipped, names quoted (PD3, L1a)."""
     out = []
-    for d in sorted(p for p in Path(repo).iterdir() if p.is_dir()):
+    for d in sorted(p for p in Path(repo).iterdir() if p.is_dir() and not p.is_symlink()):
         if d.name in detect.SKIP_DIRS or d.name.startswith("."):
             continue
         out.append(f"- {detect.safe_name(d.name + '/')}")
-        for c in sorted(p for p in d.iterdir() if p.is_dir()):
+        for c in sorted(p for p in d.iterdir() if p.is_dir() and not p.is_symlink()):
             if c.name in detect.SKIP_DIRS or c.name.startswith("."):
                 continue
             out.append(f"  - {detect.safe_name(c.name + '/')}")
@@ -186,9 +191,19 @@ def questions():
             "note": "Ask each question word for word; 'not sure' is always allowed and leaves a TODO (PD2)."}
 
 
+def unsafe_target(repo, d):
+    """PD4, E6: refuse links, and anything that resolves outside the repo."""
+    for p in [repo / "docs", d] + [d / f for f in FILES]:
+        if p.is_symlink():
+            return (f"refused: {p.relative_to(repo).as_posix()} is a symbolic link; Governor writes project docs "
+                    "only inside this repo (PD4, E6). Replace the link with a real folder or file.")
+    if d.exists() and repo not in d.resolve().parents:
+        return f"refused: {DOCS_DIR} resolves outside this repo (PD4, E6)"
+    return None
+
+
 def write_docs(repo, answers, today=None):
     """Write missing files, record them in governance.yaml, re-render (PD4, PD8). Returns (code, lines)."""
-    import lint
     import render
     repo = Path(repo).resolve()
     gov = governance.read(repo)
@@ -201,6 +216,22 @@ def write_docs(repo, answers, today=None):
     today = today or datetime.date.today().isoformat()
     texts = build(repo, gov, a, today)
     d = repo / DOCS_DIR
+    problem = unsafe_target(repo, d)
+    if problem:
+        return 4, [problem]
+    for name in ALWAYS:   # PD6: a kept always-loaded file is imported every session, so check it first
+        p = d / name
+        if p.exists():
+            probs = gcm.docs_text_problems(p.read_text(encoding="utf-8", errors="replace"), lint.GUARDRAIL_OFF)
+            if probs:
+                return 4, [f"refused: {DOCS_DIR}/{name} already exists and would load into every session, but "
+                           f"{'; '.join(probs)}. Review or shorten it yourself, then re-run (PD6)."]
+    old = gov.get("docs") or {}
+    gov["docs"] = {"dir": DOCS_DIR, "files": FILES, "created": old.get("created", today)}
+    try:
+        render.preflight(repo, gov)   # every render refusal before anything is written (I2)
+    except render.RenderError as exc:
+        return 4, [str(exc)]
     d.mkdir(parents=True, exist_ok=True)
     out = []
     for name, text in texts.items():
@@ -208,11 +239,9 @@ def write_docs(repo, answers, today=None):
         if p.exists():
             out.append(f"kept {DOCS_DIR}/{name} (already exists; yours, never overwritten)")
             continue
-        with open(p, "w", encoding="utf-8", newline="\n") as fh:
+        with open(p, "x", encoding="utf-8", newline="\n") as fh:   # exclusive create: never through a link (PD4)
             fh.write(text)
         out.append(f"created {DOCS_DIR}/{name}")
-    old = gov.get("docs") or {}
-    gov["docs"] = {"dir": DOCS_DIR, "files": FILES, "created": old.get("created", today)}
     governance.write(repo, gov)
     render.render(repo)
     fails, warns = lint.lint(repo)

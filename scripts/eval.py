@@ -29,6 +29,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import detect  # noqa: E402
+import docs  # noqa: E402
 import doctor  # noqa: E402
 import drift  # noqa: E402
 import exceptions  # noqa: E402
@@ -69,14 +70,18 @@ def _materialise(root, files):
 FAMILY_STACK = {"fastapi-postgres": "fastapi-postgres", "node": "next-supabase", "generic": "rails-postgres"}
 
 
-def _install_tier(work, tier, family="fastapi-postgres"):
-    repo = work / f"tier{tier}-{family}"
+def _install_tier(work, tier, family="fastapi-postgres", with_docs=False):
+    repo = work / (f"tier{tier}-{family}" + ("-docs" if with_docs else ""))
     repo.mkdir(parents=True)
     governance.write(repo, governance.build(dict(BASE_INTAKE, stack=FAMILY_STACK[family], **TIER_INTAKE[tier])))
     render.render(repo)
     got = governance.read(repo)["tier"]["effective"]
     if got != tier:
         raise RuntimeError(f"eval setup: wanted tier {tier}, got {got}")
+    if with_docs:   # PD6 cases run against a repo with project docs recorded
+        code, out = docs.write_docs(repo, {"product": "eval app", "features": ["add a note"]}, today="2026-01-01")
+        if code != 0:
+            raise RuntimeError(f"eval setup: docs failed: {out}")
     return repo
 
 
@@ -89,6 +94,10 @@ def _event(case, repo):
     elif tool in ("Read", "Write", "Edit"):
         p = case["path"]
         ti = {"file_path": p if p.startswith(("~", "/")) else str(repo / p)}
+        if tool == "Write" and "content" in case:
+            ti["content"] = case["content"]
+        if tool == "Edit" and "new_string" in case:
+            ti.update(old_string=case.get("old_string", ""), new_string=case["new_string"])
     elif tool == "Grep":
         ti = {"pattern": "x", "glob": case["glob"]}
     elif tool == "Glob":
@@ -125,7 +134,7 @@ def run_enforcement(work):
     repos = {}
     rows = []
     for c in cases:
-        key = (c.get("tier", 3), c.get("family", "fastapi-postgres"))
+        key = (c.get("tier", 3), c.get("family", "fastapi-postgres"), bool(c.get("docs")))
         if key not in repos:
             repos[key] = _install_tier(work, *key)
         repo = repos[key]
@@ -290,6 +299,21 @@ def _step(repo, s, state):
         node[s["key"][-1]] = s["value"]
         (repo / "governance.yaml").write_text(yaml.safe_dump(gov, sort_keys=False), encoding="utf-8")
         return True, ""
+    if do == "docs":
+        code, lines = docs.write_docs(repo, s.get("answers") or {}, today="2026-01-01")
+        text = " ".join(lines)
+        if want == "ok":
+            return code == 0, f"code {code}; {lines[:2]}"
+        return code != 0 and s.get("contains", "") in text, f"code {code}; {lines[:1]}"
+    if do == "stop":   # run the rendered Stop hook once; check its block reason (I1f)
+        env = dict(os.environ, CLAUDE_PROJECT_DIR=str(repo))
+        r = subprocess.run([sys.executable, str(repo / ".claude/hooks/governor_stop.py")],
+                           input=json.dumps({"session_id": "eval-stop", "cwd": str(repo), "hook_event_name": "Stop"}),
+                           capture_output=True, text=True, env=env, timeout=120)
+        reason = json.loads(r.stdout)["reason"] if r.stdout.strip() else ""
+        return s["text"] in reason and not any(t in reason for t in s.get("not", [])), reason[:160]
+    if do == "file_lacks":
+        return s["text"] not in (repo / s["path"]).read_text(encoding="utf-8"), "text present"
     if do == "file_contains":
         return s["text"] in (repo / s["path"]).read_text(encoding="utf-8"), "text missing"
     if do == "absent":
