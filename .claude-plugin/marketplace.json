@@ -1,12 +1,19 @@
 {
   "name": "chittychat-governor",
-  "description": "Marketplace for the Governor plugin.",
-  "owner": {"name": "chittychat-studio"},
+  "description": "Marketplace for the Governor and Repo Scout plugins.",
+  "owner": {
+    "name": "chittychat-studio"
+  },
   "plugins": [
     {
       "name": "governor",
       "source": "./",
       "description": "Enforced, drift-checked agent governance for a repo."
+    },
+    {
+      "name": "repo-scout",
+      "source": "./plugins/repo-scout",
+      "description": "Find the 3 most-starred open-source GitHub repos for a project you describe."
     }
   ]
 }
