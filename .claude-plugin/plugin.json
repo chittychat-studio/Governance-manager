@@ -5,5 +5,6 @@
   "description": "A safety kit for AI coding agents: a few plain questions, then enforced rules that stop the agent wiping folders, reading secrets, force-pushing, deploying or switching its own safety off. Any stack.",
   "author": {"name": "chittychat-studio"},
   "repository": "https://github.com/chittychat-studio/Governance-manager",
+  "license": "MIT",
   "keywords": ["governance", "hooks", "permissions", "security", "guardrails", "vibe-coding"]
 }
