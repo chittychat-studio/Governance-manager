@@ -338,3 +338,7 @@ python -m pytest
 python scripts/eval.py
 python scripts/sign_pack.py --check
 ```
+
+## Licence
+
+MIT. See `LICENSE`.

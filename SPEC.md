@@ -171,6 +171,7 @@ Confidence tags: [C] certain, [L] likely, [G] guessing — [G] rules must be ver
 - **S1** `/governor:status` (`scripts/status.py`, read-only) says in plain words whether Governor is on, the tier and why, what the agent is blocked from, what needs the user's approval, what is only advisory, and what was blocked or asked recently.
 - **EV4** Friction is measured from `.claude/governor/governor.log`: deny and ask counts per rule over a window (default 14 days), shown by status and in the evidence report. Real-repo trials (T3 [G], three repos) follow `docs/TRIALS.md` and record which blocks stopped legitimate work.
 - **RL1** A public release needs: CHANGELOG entry, version bumped in `.claude-plugin/plugin.json` and `governance.py`, eval gates passing, `PACKS.lock` signed (P4a), a git tag `vX.Y.Z`. Making the repository public and pushing the tag are the maintainer's actions, never the agent's (`docs/RELEASE.md`).
+- **RL2** Governor is MIT-licensed (`LICENSE`, owner decision 2026-10-23), so projects and templates may ship its generated rules and hooks; the copyright and licence notice travel with any copy of Governor's own files.
 
 ## NX — Deliberately excluded (v1)
 
